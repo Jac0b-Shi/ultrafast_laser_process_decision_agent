@@ -31,6 +31,10 @@
 
 响应包含 `recommendations`、`dataset_size`、`candidate_size` 和 `notes`。
 
+当目标深度或目标直径缺少足够历史样本，或明显超出同材料历史观测范围时，接口返回 `422`。`detail.violations` 会给出请求值、样本数量、历史最小值、历史最大值和允许范围。
+
+响应中的 `model_info` 会说明当前推荐模型。MVP 当前使用的是范围守卫加相似案例检索，不是回归/GPR 拟合模型。
+
 ## `POST /api/feedback`
 
 请求：

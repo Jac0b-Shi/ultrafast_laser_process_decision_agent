@@ -138,6 +138,12 @@ textarea {
   color: var(--ink);
 }
 
+.field input:disabled {
+  background: #f1f4f0;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
 .field textarea {
   min-height: 86px;
   resize: vertical;
@@ -248,6 +254,15 @@ textarea {
 
 .muted {
   color: var(--muted);
+}
+
+.model-box {
+  display: grid;
+  gap: 8px;
+}
+
+.model-box p {
+  margin: 0;
 }
 
 .error {

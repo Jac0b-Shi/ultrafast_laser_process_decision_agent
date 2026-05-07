@@ -23,6 +23,16 @@ export type CaseMatch = {
   score: number;
 };
 
+export type ModelInfo = {
+  model_name: string;
+  model_version: string;
+  model_type: string;
+  training_scope: string;
+  feature_columns: string[];
+  target_columns: string[];
+  extrapolation_policy: string;
+};
+
 export type Recommendation = {
   rank: number;
   parameters: Record<string, number>;
@@ -36,6 +46,7 @@ export type Recommendation = {
 export type RecommendationResponse = {
   dataset_size: number;
   candidate_size: number;
+  model_info: ModelInfo;
   recommendations: Recommendation[];
   notes: string[];
 };

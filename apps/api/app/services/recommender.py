@@ -5,8 +5,25 @@ from typing import Any
 
 import pandas as pd
 
-from app.schemas import CaseMatch, ParameterRecommendation, RecommendationRequest, RecommendationResponse
+from app.schemas import CaseMatch, ModelInfo, ParameterRecommendation, RecommendationRequest, RecommendationResponse
 from app.services.data_loader import PARAMETER_COLUMNS, QUALITY_COLUMNS, load_dataset
+
+MODEL_INFO = ModelInfo(
+    model_name="range_guarded_similarity_retriever",
+    model_version="0.2.0",
+    model_type="规则范围守卫 + 加权目标距离相似案例检索",
+    training_scope="不训练回归模型；每次请求基于当前 Excel 与反馈样本做材料过滤、范围校验和距离排序。",
+    feature_columns=PARAMETER_COLUMNS,
+    target_columns=QUALITY_COLUMNS,
+    extrapolation_policy="目标深度/直径缺少足够历史样本，或超出同材料历史观测范围并超过 10% 数据跨度缓冲时，直接返回 422，不做外推拟合。",
+)
+
+
+class OutOfRangeError(ValueError):
+    def __init__(self, message: str, details: list[dict[str, Any]]) -> None:
+        super().__init__(message)
+        self.message = message
+        self.details = details
 
 
 def _finite(value: Any) -> bool:
@@ -106,11 +123,82 @@ def _uncertainty(frame: pd.DataFrame) -> dict[str, float]:
     return output
 
 
+def _range_summary(values: pd.Series) -> tuple[float, float, float]:
+    minimum = float(values.min())
+    maximum = float(values.max())
+    span = maximum - minimum
+    buffer = max(span * 0.10, 1e-9)
+    return minimum, maximum, buffer
+
+
+def _validate_observed_target_ranges(frame: pd.DataFrame, request: RecommendationRequest) -> None:
+    checks = [
+        ("target_depth_um", "depth_um", request.target_depth_um, "目标深度"),
+        ("target_diameter_um", "diameter_um", request.target_diameter_um, "目标直径"),
+    ]
+    violations: list[dict[str, Any]] = []
+
+    for request_field, column, target, label in checks:
+        if target is None or column not in frame:
+            continue
+        values = frame[column].dropna()
+        if len(values) < 3:
+            violations.append(
+                {
+                    "field": request_field,
+                    "metric": column,
+                    "label": label,
+                    "requested": target,
+                    "reason": "insufficient_observations",
+                    "sample_count": int(len(values)),
+                }
+            )
+            continue
+        minimum, maximum, buffer = _range_summary(values)
+        if target < minimum - buffer or target > maximum + buffer:
+            violations.append(
+                {
+                    "field": request_field,
+                    "metric": column,
+                    "label": label,
+                    "requested": target,
+                    "observed_min": round(minimum, 6),
+                    "observed_max": round(maximum, 6),
+                    "allowed_min": round(minimum - buffer, 6),
+                    "allowed_max": round(maximum + buffer, 6),
+                    "sample_count": int(len(values)),
+                }
+            )
+
+    if violations:
+        material = request.material or "当前候选集"
+        messages: list[str] = []
+        for item in violations:
+            if item.get("reason") == "insufficient_observations":
+                messages.append(
+                    f"{material} 缺少足够的 {item['label']} 历史样本，"
+                    f"当前只有 {item['sample_count']} 条可用观测"
+                )
+            else:
+                messages.append(
+                    f"{item['label']} {item['requested']} 超出 {material} 历史观测范围 "
+                    f"{item['observed_min']} - {item['observed_max']}"
+                )
+        readable = "; ".join(messages)
+        raise OutOfRangeError(f"{readable}，系统已拒绝外推拟合。", violations)
+
+
 def recommend_parameters(request: RecommendationRequest) -> RecommendationResponse:
     dataset = load_dataset()
     notes: list[str] = []
     if dataset.empty:
-        return RecommendationResponse(dataset_size=0, candidate_size=0, recommendations=[], notes=["未找到原始数据。"])
+        return RecommendationResponse(
+            dataset_size=0,
+            candidate_size=0,
+            model_info=MODEL_INFO,
+            recommendations=[],
+            notes=["未找到原始数据。"],
+        )
 
     candidates = dataset
     if request.material:
@@ -122,6 +210,8 @@ def recommend_parameters(request: RecommendationRequest) -> RecommendationRespon
                 notes.append(f"未找到材料 {request.material} 的样本，已回退到全量数据。")
         else:
             candidates = exact
+
+    _validate_observed_target_ranges(candidates, request)
 
     constrained = _apply_constraints(candidates, request.constraints)
     if constrained.empty:
@@ -163,6 +253,7 @@ def recommend_parameters(request: RecommendationRequest) -> RecommendationRespon
     return RecommendationResponse(
         dataset_size=int(len(dataset)),
         candidate_size=int(len(candidates)),
+        model_info=MODEL_INFO,
         recommendations=recommendations,
         notes=notes,
     )

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Database, FlaskConical, RefreshCcw, Save, Send } from "lucide-react";
 
 import { apiFetch } from "@/lib/api";
-import type { DatasetSummary, RecommendationResponse } from "@/types/api";
+import type { DatasetSummary, ModelInfo, RecommendationResponse } from "@/types/api";
 
 type FormState = {
   material: string;
@@ -55,6 +55,7 @@ function MetricGrid({ values }: { values: Record<string, number> }) {
 
 export function Workbench() {
   const [summary, setSummary] = useState<DatasetSummary | null>(null);
+  const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
   const [result, setResult] = useState<RecommendationResponse | null>(null);
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
@@ -65,8 +66,12 @@ export function Workbench() {
 
   async function loadSummary() {
     setError("");
-    const payload = await apiFetch<DatasetSummary>("/api/datasets/summary");
+    const [payload, model] = await Promise.all([
+      apiFetch<DatasetSummary>("/api/datasets/summary"),
+      apiFetch<ModelInfo>("/api/recommendations/model-info"),
+    ]);
     setSummary(payload);
+    setModelInfo(model);
     if (!form.material && payload.materials.length > 0) {
       setForm((current) => ({ ...current, material: payload.materials[0].material }));
     }
@@ -81,6 +86,21 @@ export function Workbench() {
     if (!result || selectedRank === null) return null;
     return result.recommendations.find((item) => item.rank === selectedRank) ?? null;
   }, [result, selectedRank]);
+
+  const selectedMaterial = useMemo(
+    () => summary?.materials.find((item) => item.material === form.material) ?? null,
+    [form.material, summary],
+  );
+  const diameterAvailable = selectedMaterial?.quality_metrics.includes("diameter_um") ?? false;
+
+  function updateMaterial(material: string) {
+    const nextMaterial = summary?.materials.find((item) => item.material === material) ?? null;
+    setForm((current) => ({
+      ...current,
+      material,
+      targetDiameter: nextMaterial?.quality_metrics.includes("diameter_um") ? current.targetDiameter : "",
+    }));
+  }
 
   async function submitRecommendation() {
     setLoading(true);
@@ -153,6 +173,7 @@ export function Workbench() {
           <div className="status-row">
             <span className="badge"><Database size={16} />{summary?.total_samples ?? "-"} 条样本</span>
             <span className="badge"><FlaskConical size={16} />{summary?.materials.length ?? "-"} 类材料</span>
+            <span className="badge">模型 {modelInfo?.model_version ?? "-"}</span>
           </div>
         </div>
       </header>
@@ -172,7 +193,7 @@ export function Workbench() {
                 <select
                   id="material"
                   value={form.material}
-                  onChange={(event) => setForm({ ...form, material: event.target.value })}
+                  onChange={(event) => updateMaterial(event.target.value)}
                 >
                   {summary?.materials.map((item) => (
                     <option key={item.material} value={item.material}>
@@ -187,7 +208,13 @@ export function Workbench() {
               </div>
               <div className="field">
                 <label htmlFor="diameter">目标直径 um</label>
-                <input id="diameter" value={form.targetDiameter} onChange={(event) => setForm({ ...form, targetDiameter: event.target.value })} />
+                <input
+                  id="diameter"
+                  value={form.targetDiameter}
+                  disabled={!diameterAvailable}
+                  placeholder={diameterAvailable ? "" : "当前材料暂无直径指标"}
+                  onChange={(event) => setForm({ ...form, targetDiameter: event.target.value })}
+                />
               </div>
               <div className="field">
                 <label htmlFor="roughness">粗糙度上限 um</label>
@@ -209,6 +236,20 @@ export function Workbench() {
         </section>
 
         <section className="results">
+          <div className="panel">
+            <div className="panel-header">
+              <h2>模型状态</h2>
+              <span className="muted">{modelInfo?.model_name ?? "加载中"}</span>
+            </div>
+            <div className="panel-body">
+              <div className="model-box">
+                <strong>{modelInfo?.model_type ?? "暂未加载"}</strong>
+                <p className="muted">{modelInfo?.training_scope}</p>
+                <p className="muted">{modelInfo?.extrapolation_policy}</p>
+              </div>
+            </div>
+          </div>
+
           <div className="panel">
             <div className="panel-header">
               <h2>数据概览</h2>
@@ -234,6 +275,11 @@ export function Workbench() {
             </div>
             <div className="panel-body results">
               {result?.notes.map((note) => <p className="muted" key={note}>{note}</p>)}
+              {result?.model_info && (
+                <p className="muted">
+                  本次使用：{result.model_info.model_type}，版本 {result.model_info.model_version}
+                </p>
+              )}
               {result?.recommendations.map((item) => (
                 <article className="recommendation" key={item.rank}>
                   <div className="recommendation-title">
