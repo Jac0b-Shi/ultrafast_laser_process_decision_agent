@@ -1,0 +1,18 @@
+default_provider: local
+
+providers:
+  local:
+    type: disabled
+    description: "默认不调用外部大模型，后端使用数据模型生成推荐。"
+  deepseek:
+    type: chat_completions
+    base_url: "https://api.deepseek.com"
+    model: "deepseek-v4-flash"
+    api_key_env: "DEEPSEEK_API_KEY"
+    enabled: false
+  ollama:
+    type: ollama
+    base_url: "http://localhost:11434"
+    chat_model: "qwen3:8b"
+    embedding_model: "nomic-embed-text"
+    enabled: false

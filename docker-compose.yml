@@ -1,0 +1,27 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      LASER_DATA_DIR: /workspace/data
+      LASER_EXPERIMENTS_DIR: /workspace/experiments
+      LASER_CONFIG_DIR: /workspace/configs
+      CORS_ORIGINS: http://localhost:${WEB_PORT:-3000},http://127.0.0.1:${WEB_PORT:-3000}
+    volumes:
+      - ./data:/workspace/data
+      - ./experiments:/workspace/experiments
+      - ./configs:/workspace/configs:ro
+    ports:
+      - "${API_PORT:-8000}:8000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${API_PORT:-8000}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      - api
