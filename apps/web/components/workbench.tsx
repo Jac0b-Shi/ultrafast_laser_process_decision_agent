@@ -281,14 +281,17 @@ export function Workbench() {
                 </p>
               )}
               {result?.recommendations.map((item) => (
-                <article className="recommendation" key={item.rank}>
+                <article className="recommendation" key={`${item.generation_method}-${item.rank}`}>
                   <div className="recommendation-title">
-                    <strong>推荐 #{item.rank}</strong>
+                    <strong>{item.generation_method === "ml_regression_fit" ? "回归模型推荐" : `推荐 #${item.rank}`}</strong>
                     <button className="button secondary" onClick={() => setSelectedRank(item.rank)}>
                       选择
                     </button>
                     <span className="score">得分 {item.score}</span>
                   </div>
+                  <span className="badge">
+                    {item.generation_method === "ml_regression_fit" ? "机器学习拟合" : "历史相似案例"}
+                  </span>
                   <p className="muted">{item.rationale}</p>
                   <h3>参数</h3>
                   <MetricGrid values={item.parameters} />
@@ -302,7 +305,13 @@ export function Workbench() {
           <div className="panel">
             <div className="panel-header">
               <h2>反馈录入</h2>
-              <span className="muted">{selectedRecommendation ? `已选择 #${selectedRecommendation.rank}` : "未选择推荐"}</span>
+              <span className="muted">
+                {selectedRecommendation
+                  ? selectedRecommendation.generation_method === "ml_regression_fit"
+                    ? "已选择回归模型推荐"
+                    : `已选择 #${selectedRecommendation.rank}`
+                  : "未选择推荐"}
+              </span>
             </div>
             <div className="panel-body form-grid">
               <div className="field">

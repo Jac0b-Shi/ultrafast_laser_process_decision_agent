@@ -52,6 +52,8 @@ class ModelInfo(BaseModel):
 
 class ParameterRecommendation(BaseModel):
     rank: int
+    generation_method: str
+    model_name: str | None = None
     parameters: dict[str, float]
     predicted_quality: dict[str, float]
     uncertainty: dict[str, float]
