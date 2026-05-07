@@ -1,0 +1,5 @@
+features:
+  llm_explanations: false
+  bayesian_optimization: false
+  feedback_affects_recommendation: true
+  persist_feedback_sqlite: true

@@ -1,0 +1,13 @@
+default_objective:
+  target_depth_um: null
+  target_diameter_um: null
+  max_roughness_um: null
+  weights:
+    depth: 1.0
+    diameter: 0.8
+    roughness: 0.6
+
+quality_metrics:
+  - depth_um
+  - diameter_um
+  - roughness_um
