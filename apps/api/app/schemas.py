@@ -40,6 +40,16 @@ class CaseMatch(BaseModel):
     score: float
 
 
+class ModelInfo(BaseModel):
+    model_name: str
+    model_version: str
+    model_type: str
+    training_scope: str
+    feature_columns: list[str]
+    target_columns: list[str]
+    extrapolation_policy: str
+
+
 class ParameterRecommendation(BaseModel):
     rank: int
     parameters: dict[str, float]
@@ -53,6 +63,7 @@ class ParameterRecommendation(BaseModel):
 class RecommendationResponse(BaseModel):
     dataset_size: int
     candidate_size: int
+    model_info: ModelInfo
     recommendations: list[ParameterRecommendation]
     notes: list[str]
 
