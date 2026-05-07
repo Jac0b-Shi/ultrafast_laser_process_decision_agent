@@ -24,8 +24,8 @@ def test_model_info() -> None:
     response = client.get("/api/recommendations/model-info")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["model_name"] == "range_guarded_similarity_retriever"
-    assert "不训练回归模型" in payload["training_scope"]
+    assert payload["model_name"] == "range_guarded_random_forest_regressor"
+    assert "RandomForestRegressor" in payload["model_type"]
 
 
 def test_recommendations() -> None:
@@ -43,7 +43,13 @@ def test_recommendations() -> None:
     payload = response.json()
     assert payload["recommendations"]
     assert payload["candidate_size"] > 0
-    assert payload["model_info"]["model_name"] == "range_guarded_similarity_retriever"
+    assert payload["model_info"]["model_name"] == "range_guarded_random_forest_regressor"
+    assert payload["recommendations"][0]["generation_method"] == "ml_regression_fit"
+    assert payload["recommendations"][0]["model_name"] == "range_guarded_random_forest_regressor"
+    assert payload["recommendations"][0]["rank"] == 0
+    assert payload["recommendations"][1]["generation_method"] == "historical_similarity"
+    assert payload["recommendations"][1]["rank"] == 1
+    assert len(payload["recommendations"]) == 3
 
 
 def test_recommendations_reject_obvious_out_of_range_target() -> None:

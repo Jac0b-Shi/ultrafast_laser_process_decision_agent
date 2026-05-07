@@ -35,6 +35,8 @@ export type ModelInfo = {
 
 export type Recommendation = {
   rank: number;
+  generation_method: string;
+  model_name: string | null;
   parameters: Record<string, number>;
   predicted_quality: Record<string, number>;
   uncertainty: Record<string, number>;

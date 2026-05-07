@@ -3,20 +3,27 @@ from __future__ import annotations
 import math
 from typing import Any
 
+import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
 
 from app.schemas import CaseMatch, ModelInfo, ParameterRecommendation, RecommendationRequest, RecommendationResponse
 from app.services.data_loader import PARAMETER_COLUMNS, QUALITY_COLUMNS, load_dataset
 
 MODEL_INFO = ModelInfo(
-    model_name="range_guarded_similarity_retriever",
-    model_version="0.2.0",
-    model_type="规则范围守卫 + 加权目标距离相似案例检索",
-    training_scope="不训练回归模型；每次请求基于当前 Excel 与反馈样本做材料过滤、范围校验和距离排序。",
+    model_name="range_guarded_random_forest_regressor",
+    model_version="0.3.0",
+    model_type="规则范围守卫 + 相似案例筛选 + RandomForestRegressor 回归拟合",
+    training_scope="每次请求先按材料和约束筛选历史样本，再用当前候选集训练参数到质量指标的随机森林回归模型，并在历史参数范围内生成拟合候选。",
     feature_columns=PARAMETER_COLUMNS,
     target_columns=QUALITY_COLUMNS,
     extrapolation_policy="目标深度/直径缺少足够历史样本，或超出同材料历史观测范围并超过 10% 数据跨度缓冲时，直接返回 422，不做外推拟合。",
 )
+
+MIN_REGRESSION_SAMPLES = 6
+RANDOM_STATE = 42
 
 
 class OutOfRangeError(ValueError):
@@ -65,6 +72,10 @@ def _apply_constraints(frame: pd.DataFrame, constraints: dict[str, Any]) -> pd.D
 
 
 def _score_row(row: pd.Series, frame: pd.DataFrame, request: RecommendationRequest) -> float:
+    return _score_quality(_number_dict(row, QUALITY_COLUMNS), frame, request)
+
+
+def _score_quality(quality: dict[str, float], frame: pd.DataFrame, request: RecommendationRequest) -> float:
     score = 0.0
     terms = 0
 
@@ -76,7 +87,7 @@ def _score_row(row: pd.Series, frame: pd.DataFrame, request: RecommendationReque
         if target is None:
             continue
         terms += 1
-        value = row.get(column)
+        value = quality.get(column)
         if not _finite(value):
             score += 2.0
             continue
@@ -84,7 +95,7 @@ def _score_row(row: pd.Series, frame: pd.DataFrame, request: RecommendationReque
 
     if request.max_roughness_um is not None:
         terms += 1
-        value = row.get("roughness_um")
+        value = quality.get("roughness_um")
         if not _finite(value):
             score += 1.5
         elif float(value) <= request.max_roughness_um:
@@ -93,12 +104,12 @@ def _score_row(row: pd.Series, frame: pd.DataFrame, request: RecommendationReque
             score += 1.0 + (float(value) - request.max_roughness_um) / max(request.max_roughness_um, 1e-9)
 
     if terms == 0:
-        roughness = row.get("roughness_um")
-        depth = row.get("depth_um")
+        roughness = quality.get("roughness_um")
+        depth = quality.get("depth_um")
         score += float(roughness) if _finite(roughness) else 1.0
         score -= 0.05 * float(depth) if _finite(depth) else 0.0
 
-    missing_quality = sum(1 for column in QUALITY_COLUMNS if not _finite(row.get(column)))
+    missing_quality = sum(1 for column in QUALITY_COLUMNS if not _finite(quality.get(column)))
     return score + 0.05 * missing_quality
 
 
@@ -188,6 +199,194 @@ def _validate_observed_target_ranges(frame: pd.DataFrame, request: Recommendatio
         raise OutOfRangeError(f"{readable}，系统已拒绝外推拟合。", violations)
 
 
+def _regression_targets(frame: pd.DataFrame, request: RecommendationRequest) -> list[str]:
+    requested_targets = [
+        ("depth_um", request.target_depth_um is not None),
+        ("diameter_um", request.target_diameter_um is not None),
+        ("roughness_um", request.max_roughness_um is not None),
+    ]
+    targets = [
+        column
+        for column, requested in requested_targets
+        if requested and column in frame and frame[column].dropna().shape[0] >= MIN_REGRESSION_SAMPLES
+    ]
+    if targets:
+        return targets
+    return [
+        column
+        for column in QUALITY_COLUMNS
+        if column in frame and frame[column].dropna().shape[0] >= MIN_REGRESSION_SAMPLES
+    ]
+
+
+def _regression_features(frame: pd.DataFrame) -> list[str]:
+    features: list[str] = []
+    for column in PARAMETER_COLUMNS:
+        if column not in frame:
+            continue
+        values = frame[column].dropna()
+        if len(values) >= MIN_REGRESSION_SAMPLES and values.nunique() >= 2:
+            features.append(column)
+    return features
+
+
+def _fit_regression_models(
+    frame: pd.DataFrame,
+    feature_columns: list[str],
+    target_columns: list[str],
+) -> tuple[dict[str, Pipeline], list[str]]:
+    models: dict[str, Pipeline] = {}
+    skipped: list[str] = []
+    feature_ready = frame[feature_columns].notna().any(axis=1)
+
+    for target in target_columns:
+        train = frame[feature_ready & frame[target].notna()]
+        if len(train) < MIN_REGRESSION_SAMPLES:
+            skipped.append(target)
+            continue
+        model = Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                (
+                    "regressor",
+                    RandomForestRegressor(
+                        n_estimators=160,
+                        min_samples_leaf=2,
+                        random_state=RANDOM_STATE,
+                    ),
+                ),
+            ]
+        )
+        model.fit(train[feature_columns], train[target])
+        models[target] = model
+
+    return models, skipped
+
+
+def _generate_regression_candidates(
+    frame: pd.DataFrame,
+    feature_columns: list[str],
+    scored_rows: list[tuple[Any, float]],
+    request: RecommendationRequest,
+) -> pd.DataFrame:
+    feature_frame = frame[feature_columns].copy()
+    medians = feature_frame.median(numeric_only=True)
+    minimums = feature_frame.min(numeric_only=True)
+    maximums = feature_frame.max(numeric_only=True)
+    rng = np.random.default_rng(RANDOM_STATE)
+
+    rows: list[dict[str, float]] = []
+    for _, row in feature_frame.dropna(how="all").iterrows():
+        rows.append({column: float(row.get(column, medians[column])) for column in feature_columns})
+
+    top_indices = [index for index, _ in scored_rows[: min(12, len(scored_rows))]]
+    if top_indices:
+        all_feature_rows = feature_frame.dropna(how="all").reset_index(drop=True)
+        for index in top_indices:
+            base = frame.loc[index, feature_columns].fillna(medians)
+            for _ in range(12):
+                if all_feature_rows.empty:
+                    other = base
+                else:
+                    other = all_feature_rows.iloc[int(rng.integers(0, len(all_feature_rows)))].fillna(medians)
+                alpha = float(rng.uniform(0.55, 0.9))
+                blended = alpha * base + (1.0 - alpha) * other
+                candidate: dict[str, float] = {}
+                for column in feature_columns:
+                    span = float(maximums[column] - minimums[column])
+                    jitter = float(rng.normal(0, span * 0.025)) if span > 0 else 0.0
+                    value = float(blended[column] + jitter)
+                    value = min(max(value, float(minimums[column])), float(maximums[column]))
+                    candidate[column] = value
+                rows.append(candidate)
+
+    generated = pd.DataFrame(rows).drop_duplicates()
+    if generated.empty:
+        return generated
+    return _apply_constraints(generated, request.constraints)
+
+
+def _predict_quality_and_uncertainty(
+    models: dict[str, Pipeline],
+    feature_columns: list[str],
+    feature_row: pd.Series,
+) -> tuple[dict[str, float], dict[str, float]]:
+    input_frame = pd.DataFrame([feature_row[feature_columns].to_dict()], columns=feature_columns)
+    predicted: dict[str, float] = {}
+    uncertainty: dict[str, float] = {}
+
+    for target, model in models.items():
+        prediction = float(model.predict(input_frame)[0])
+        predicted[target] = round(prediction, 4)
+        regressor = model.named_steps["regressor"]
+        transformed = model.named_steps["imputer"].transform(input_frame)
+        tree_predictions = [float(tree.predict(transformed)[0]) for tree in regressor.estimators_]
+        uncertainty[target] = round(float(np.std(tree_predictions)), 4)
+
+    return predicted, uncertainty
+
+
+def _ml_recommendations(
+    frame: pd.DataFrame,
+    scored_rows: list[tuple[Any, float]],
+    similar_cases: list[CaseMatch],
+    request: RecommendationRequest,
+) -> tuple[list[ParameterRecommendation], list[str]]:
+    notes: list[str] = []
+    feature_columns = _regression_features(frame)
+    target_columns = _regression_targets(frame, request)
+    if not feature_columns:
+        return [], ["可用参数列不足，已回退到历史相似案例推荐。"]
+    if not target_columns:
+        return [], ["可用质量指标样本不足，已回退到历史相似案例推荐。"]
+
+    models, skipped = _fit_regression_models(frame, feature_columns, target_columns)
+    if not models:
+        return [], ["回归模型训练样本不足，已回退到历史相似案例推荐。"]
+    if skipped:
+        notes.append(f"以下质量指标样本不足，未训练回归模型：{', '.join(skipped)}。")
+
+    generated = _generate_regression_candidates(frame, feature_columns, scored_rows, request)
+    if generated.empty:
+        return [], ["拟合候选参数生成失败，已回退到历史相似案例推荐。"]
+
+    ranked: list[tuple[float, dict[str, float], dict[str, float], dict[str, float]]] = []
+    for _, feature_row in generated.iterrows():
+        predicted, uncertainty = _predict_quality_and_uncertainty(models, feature_columns, feature_row)
+        if not predicted:
+            continue
+        raw_score = _score_quality(predicted, frame, request)
+        ranked.append((raw_score, {column: float(feature_row[column]) for column in feature_columns}, predicted, uncertainty))
+
+    ranked.sort(key=lambda item: item[0])
+    recommendations: list[ParameterRecommendation] = []
+    for rank, (raw_score, parameters, predicted, uncertainty) in enumerate(ranked[:1], start=0):
+        score = round(1.0 / (1.0 + max(raw_score, 0.0)), 4)
+        recommendations.append(
+            ParameterRecommendation(
+                rank=rank,
+                generation_method="ml_regression_fit",
+                model_name=MODEL_INFO.model_name,
+                parameters=parameters,
+                predicted_quality=predicted,
+                uncertainty=uncertainty,
+                score=score,
+                rationale=(
+                    "先按材料和目标质量检索相似历史案例，再用 RandomForestRegressor "
+                    f"在 {len(frame)} 条候选样本上拟合参数到质量指标的关系，并在历史参数范围内生成该候选。"
+                ),
+                similar_cases=similar_cases,
+            )
+        )
+
+    if recommendations:
+        notes.append(
+            f"已训练 {len(models)} 个随机森林回归模型，输入特征：{', '.join(feature_columns)}；"
+            f"拟合目标：{', '.join(models.keys())}。"
+        )
+    return recommendations, notes
+
+
 def recommend_parameters(request: RecommendationRequest) -> RecommendationResponse:
     dataset = load_dataset()
     notes: list[str] = []
@@ -229,8 +428,10 @@ def recommend_parameters(request: RecommendationRequest) -> RecommendationRespon
     similar_cases = [_case_match(candidates.loc[index], score) for index, score in similar_rows]
     uncertainty = _uncertainty(candidates)
 
-    recommendations: list[ParameterRecommendation] = []
-    for rank, (index, raw_score) in enumerate(top, start=1):
+    recommendations, ml_notes = _ml_recommendations(candidates, scored_rows, similar_cases, request)
+    notes.extend(ml_notes)
+
+    for rank, (index, raw_score) in enumerate(top[: request.top_k], start=1):
         row = candidates.loc[index]
         quality = _number_dict(row, QUALITY_COLUMNS)
         score = round(1.0 / (1.0 + max(raw_score, 0.0)), 4)
@@ -241,6 +442,8 @@ def recommend_parameters(request: RecommendationRequest) -> RecommendationRespon
         recommendations.append(
             ParameterRecommendation(
                 rank=rank,
+                generation_method="historical_similarity",
+                model_name=None,
                 parameters=_number_dict(row, PARAMETER_COLUMNS),
                 predicted_quality=quality,
                 uncertainty=uncertainty,
