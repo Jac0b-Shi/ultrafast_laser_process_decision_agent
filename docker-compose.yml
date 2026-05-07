@@ -3,10 +3,14 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+    env_file:
+      - .env
     environment:
       LASER_DATA_DIR: /workspace/data
       LASER_EXPERIMENTS_DIR: /workspace/experiments
       LASER_CONFIG_DIR: /workspace/configs
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       CORS_ORIGINS: http://localhost:${WEB_PORT:-3000},http://127.0.0.1:${WEB_PORT:-3000}
     volumes:
       - ./data:/workspace/data
