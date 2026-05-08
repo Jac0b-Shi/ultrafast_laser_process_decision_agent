@@ -7,9 +7,10 @@ WORKDIR /service
 
 COPY apps/api/pyproject.toml ./pyproject.toml
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir .
+    && pip install --no-cache-dir . "pytest>=8.0.0" "httpx>=0.27.0"
 
 COPY apps/api/app ./app
+COPY apps/api/tests ./tests
 
 EXPOSE 8000
 

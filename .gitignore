@@ -41,3 +41,7 @@ experiments/feedback_logs/*
 Thumbs.db
 .idea/
 .vscode/
+
+# Shared IDE run entries
+!.run/
+!.run/*.run.xml

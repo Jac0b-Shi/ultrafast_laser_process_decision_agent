@@ -19,6 +19,7 @@ export type CaseMatch = {
   source_file: string;
   source_row: number | null;
   parameters: Record<string, number>;
+  intermediate_metrics: Record<string, number>;
   quality: Record<string, number>;
   score: number;
 };
@@ -38,10 +39,12 @@ export type Recommendation = {
   generation_method: string;
   model_name: string | null;
   parameters: Record<string, number>;
+  intermediate_metrics: Record<string, number>;
   predicted_quality: Record<string, number>;
   uncertainty: Record<string, number>;
   score: number;
   rationale: string;
+  material_explanation: string;
   similar_cases: CaseMatch[];
 };
 

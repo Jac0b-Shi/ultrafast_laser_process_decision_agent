@@ -19,6 +19,11 @@
 docker compose up --build
 ```
 
+PyCharm 中可以直接使用右上角 Run widget 选择：
+
+- `Docker Compose Up`：执行 `scripts/compose-up.ps1`，等价于在项目根目录运行 `docker compose up -d --build`。
+- `Docker Compose Down`：执行 `scripts/compose-down.ps1`，等价于在项目根目录运行 `docker compose down`。
+
 如果本机 8000 或 3000 端口已被占用，可以覆盖端口：
 
 ```powershell

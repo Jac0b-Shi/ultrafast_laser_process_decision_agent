@@ -26,6 +26,7 @@ def test_model_info() -> None:
     payload = response.json()
     assert payload["model_name"] == "range_guarded_random_forest_regressor"
     assert "RandomForestRegressor" in payload["model_type"]
+    assert "材料定制中间量" in payload["model_type"]
 
 
 def test_recommendations() -> None:
@@ -47,9 +48,54 @@ def test_recommendations() -> None:
     assert payload["recommendations"][0]["generation_method"] == "ml_regression_fit"
     assert payload["recommendations"][0]["model_name"] == "range_guarded_random_forest_regressor"
     assert payload["recommendations"][0]["rank"] == 0
+    assert payload["recommendations"][0]["intermediate_metrics"]
+    assert payload["recommendations"][0]["material_explanation"]
+    assert payload["recommendations"][0]["similar_cases"]
+    assert payload["recommendations"][0]["similar_cases"][0]["intermediate_metrics"]
     assert payload["recommendations"][1]["generation_method"] == "historical_similarity"
     assert payload["recommendations"][1]["rank"] == 1
     assert len(payload["recommendations"]) == 3
+
+
+def _assert_material_metrics(material: str, expected_metrics: set[str]) -> None:
+    response = client.post(
+        "/api/recommendations",
+        json={
+            "material": material,
+            "top_k": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    first = payload["recommendations"][0]
+    assert expected_metrics.issubset(set(first["intermediate_metrics"]))
+    assert first["material_explanation"]
+    assert first["similar_cases"]
+    assert expected_metrics.intersection(set(first["similar_cases"][0]["intermediate_metrics"]))
+
+
+def test_material_intermediate_metrics_bf33() -> None:
+    _assert_material_metrics("BF33", {"line_pulse_density_pulses_mm", "pulse_spacing_um"})
+
+
+def test_material_intermediate_metrics_sic() -> None:
+    _assert_material_metrics(
+        "4H碳化硅",
+        {"line_pulse_density_pulses_mm", "pulse_spacing_um", "threshold_relative_density"},
+    )
+
+
+def test_material_intermediate_metrics_diamond() -> None:
+    _assert_material_metrics("金刚石", {"cumulative_pulse_density", "dose_index"})
+
+
+def test_material_intermediate_metrics_microcrystalline_glass() -> None:
+    _assert_material_metrics("微晶玻璃", {"pulse_time_interaction"})
+
+
+def test_material_intermediate_metrics_superalloy() -> None:
+    _assert_material_metrics("高温合金", {"duty_cycle", "power_chain_proxy_w", "marking_energy_proxy"})
 
 
 def test_recommendations_reject_obvious_out_of_range_target() -> None:

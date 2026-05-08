@@ -12,18 +12,99 @@ from sklearn.pipeline import Pipeline
 from app.schemas import CaseMatch, ModelInfo, ParameterRecommendation, RecommendationRequest, RecommendationResponse
 from app.services.data_loader import PARAMETER_COLUMNS, QUALITY_COLUMNS, load_dataset
 
+INTERMEDIATE_METRIC_COLUMNS = [
+    "line_pulse_density_pulses_mm",
+    "pulse_spacing_um",
+    "threshold_relative_density",
+    "cumulative_pulse_density",
+    "dose_index",
+    "pulse_time_interaction",
+    "duty_cycle",
+    "power_chain_proxy_w",
+    "marking_energy_proxy",
+    "peak_power_kw",
+]
+
+MODEL_FEATURE_COLUMNS = PARAMETER_COLUMNS + [
+    column for column in INTERMEDIATE_METRIC_COLUMNS if column not in PARAMETER_COLUMNS
+]
+
 MODEL_INFO = ModelInfo(
     model_name="range_guarded_random_forest_regressor",
-    model_version="0.3.0",
-    model_type="规则范围守卫 + 相似案例筛选 + RandomForestRegressor 回归拟合",
-    training_scope="每次请求先按材料和约束筛选历史样本，再用当前候选集训练参数到质量指标的随机森林回归模型，并在历史参数范围内生成拟合候选。",
-    feature_columns=PARAMETER_COLUMNS,
+    model_version="0.4.0",
+    model_type="材料定制中间量 + 规则范围守卫 + 相似案例筛选 + RandomForestRegressor 回归拟合",
+    training_scope=(
+        "每次请求先按材料和约束筛选历史样本，再按材料构造脉冲密度、剂量指数、"
+        "功率链代理或经验交互项等中间量；回归模型使用适用原始参数和中间量拟合参数到质量指标的关系，"
+        "候选参数仍在历史原始参数范围内生成。"
+    ),
+    feature_columns=MODEL_FEATURE_COLUMNS,
     target_columns=QUALITY_COLUMNS,
     extrapolation_policy="目标深度/直径缺少足够历史样本，或超出同材料历史观测范围并超过 10% 数据跨度缓冲时，直接返回 422，不做外推拟合。",
 )
 
 MIN_REGRESSION_SAMPLES = 6
 RANDOM_STATE = 42
+
+MATERIAL_FEATURES = {
+    "bf33": [
+        "pulse_width_fs",
+        "repetition_frequency_khz",
+        "scan_speed_mm_s",
+        "line_pulse_density_pulses_mm",
+        "pulse_spacing_um",
+    ],
+    "sic": [
+        "pulse_width_fs",
+        "repetition_frequency_khz",
+        "scan_speed_mm_s",
+        "line_pulse_density_pulses_mm",
+        "pulse_spacing_um",
+        "threshold_relative_density",
+    ],
+    "diamond": [
+        "pulse_width_fs",
+        "repetition_frequency_khz",
+        "scan_speed_mm_s",
+        "fill_spacing_um",
+        "marking_count",
+        "line_pulse_density_pulses_mm",
+        "pulse_spacing_um",
+        "cumulative_pulse_density",
+        "dose_index",
+    ],
+    "microcrystalline_glass": [
+        "pulse_width_fs",
+        "repetition_frequency_khz",
+        "scan_speed_mm_s",
+        "defocus_amount_mm",
+        "scan_interval_um",
+        "processing_time_s",
+        "pulse_time_interaction",
+    ],
+    "superalloy": [
+        "pulse_width_fs",
+        "repetition_frequency_khz",
+        "laser_energy_percent",
+        "pulse_energy_mj",
+        "defocus_amount_mm",
+        "marking_count",
+        "average_power_w",
+        "peak_power_kw",
+        "duty_cycle",
+        "power_chain_proxy_w",
+        "marking_energy_proxy",
+    ],
+}
+
+MATERIAL_EXPLANATIONS = {
+    "bf33": "BF33 在报告中表现为重叠/累积主导型，深度和粗糙度相对单独频率或速度更受线脉冲密度与脉冲间距影响。",
+    "sic": "4H 碳化硅存在接近零去除的阈值区，推荐逻辑使用线脉冲密度、脉冲间距和相对阈值密度刻画阈值后的累积去除。",
+    "diamond": "金刚石的深度和粗糙度对剂量指数最敏感，因此用频率、速度、加工次数和填充间距构造累积脉冲密度与剂量指数。",
+    "microcrystalline_glass": "微晶玻璃的数据更像经验参数主导系统，剂量代理未明显优于原始参数，因此重点保留脉宽、加工时间、离焦量和脉宽-时间交互项。",
+    "superalloy": "高温合金表内已有功率链变量，直径更接近平均功率控制，深度和粗糙度更受标记频率影响，因此推荐逻辑使用功率代理、占空比和标记能量代理。",
+    "generic": "当前候选集未落入已知单一材料类型，系统使用可用原始参数和可计算中间量进行保守推荐。",
+}
 
 
 class OutOfRangeError(ValueError):
@@ -34,16 +115,180 @@ class OutOfRangeError(ValueError):
 
 
 def _finite(value: Any) -> bool:
-    return value is not None and not (isinstance(value, float) and math.isnan(value))
+    if value is None:
+        return False
+    try:
+        return not bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return True
+
+
+def _to_float(value: Any) -> float | None:
+    if not _finite(value):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(number) or math.isinf(number):
+        return None
+    return number
+
+
+def _safe_divide(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or denominator is None or abs(denominator) <= 1e-12:
+        return None
+    return numerator / denominator
 
 
 def _number_dict(row: pd.Series, columns: list[str]) -> dict[str, float]:
     output: dict[str, float] = {}
     for column in columns:
-        value = row.get(column)
-        if _finite(value):
-            output[column] = float(value)
+        value = _to_float(row.get(column))
+        if value is not None:
+            output[column] = value
     return output
+
+
+def _material_family(material: Any) -> str:
+    text = str(material or "").casefold()
+    if "bf33" in text:
+        return "bf33"
+    if "碳化硅" in text or "sic" in text or "4h" in text:
+        return "sic"
+    if "金刚石" in text or "diamond" in text:
+        return "diamond"
+    if "微晶" in text:
+        return "microcrystalline_glass"
+    if "高温合金" in text or "superalloy" in text:
+        return "superalloy"
+    return "generic"
+
+
+def _dominant_material(frame: pd.DataFrame, requested_material: str | None = None) -> str:
+    if requested_material:
+        return requested_material
+    if "material" not in frame or frame.empty:
+        return ""
+    values = [str(value) for value in frame["material"].dropna().unique()]
+    return values[0] if len(values) == 1 else ""
+
+
+def _dominant_family(frame: pd.DataFrame, requested_material: str | None = None) -> str:
+    requested_family = _material_family(requested_material)
+    if requested_family != "generic":
+        return requested_family
+    if "material" not in frame or frame.empty:
+        return "generic"
+    families = {_material_family(value) for value in frame["material"].dropna().unique()}
+    families.discard("generic")
+    return next(iter(families)) if len(families) == 1 else "generic"
+
+
+def _line_pulse_density(row: pd.Series) -> float | None:
+    frequency = _to_float(row.get("repetition_frequency_khz"))
+    speed = _to_float(row.get("scan_speed_mm_s"))
+    return _safe_divide(1000.0 * frequency if frequency is not None else None, speed)
+
+
+def _pulse_spacing(row: pd.Series) -> float | None:
+    frequency = _to_float(row.get("repetition_frequency_khz"))
+    speed = _to_float(row.get("scan_speed_mm_s"))
+    return _safe_divide(1000.0 * speed if speed is not None else None, frequency)
+
+
+def _threshold_density_by_family(frame: pd.DataFrame, material: str | None = None) -> dict[str, float]:
+    thresholds: dict[str, float] = {}
+    if frame.empty:
+        return thresholds
+
+    densities: dict[str, list[float]] = {}
+    for _, row in frame.iterrows():
+        row_material = row.get("material") if "material" in row else material
+        family = _material_family(row_material)
+        if family != "sic":
+            continue
+        depth = _to_float(row.get("depth_um"))
+        density = _line_pulse_density(row)
+        if depth is not None and depth > 0 and density is not None and density > 0:
+            densities.setdefault(family, []).append(density)
+
+    for family, values in densities.items():
+        thresholds[family] = min(values)
+    return thresholds
+
+
+def _intermediate_metrics(row: pd.Series, material: Any, threshold_density: float | None = None) -> dict[str, float]:
+    family = _material_family(material)
+    metrics: dict[str, float] = {}
+    line_density = _line_pulse_density(row)
+    pulse_spacing = _pulse_spacing(row)
+
+    def add(name: str, value: float | None) -> None:
+        if value is not None and math.isfinite(value):
+            metrics[name] = value
+
+    if family in {"bf33", "sic", "diamond"}:
+        add("line_pulse_density_pulses_mm", line_density)
+        add("pulse_spacing_um", pulse_spacing)
+
+    if family == "sic":
+        add("threshold_relative_density", _safe_divide(line_density, threshold_density))
+
+    if family == "diamond":
+        marking_count = _to_float(row.get("marking_count"))
+        fill_spacing = _to_float(row.get("fill_spacing_um"))
+        cumulative_density = line_density * marking_count if line_density is not None and marking_count is not None else None
+        add("cumulative_pulse_density", cumulative_density)
+        add("dose_index", _safe_divide(cumulative_density, fill_spacing))
+
+    if family == "microcrystalline_glass":
+        pulse_width = _to_float(row.get("pulse_width_fs"))
+        processing_time = _to_float(row.get("processing_time_s"))
+        interaction = pulse_width * processing_time if pulse_width is not None and processing_time is not None else None
+        add("pulse_time_interaction", interaction)
+
+    if family == "superalloy":
+        pulse_width = _to_float(row.get("pulse_width_fs"))
+        frequency = _to_float(row.get("repetition_frequency_khz"))
+        pulse_energy = _to_float(row.get("pulse_energy_mj"))
+        average_power = _to_float(row.get("average_power_w"))
+        marking_count = _to_float(row.get("marking_count"))
+        peak_power = _to_float(row.get("peak_power_kw"))
+        fallback_power = pulse_energy * frequency if pulse_energy is not None and frequency is not None else None
+        add("duty_cycle", pulse_width * frequency * 1e-12 if pulse_width is not None and frequency is not None else None)
+        add("power_chain_proxy_w", average_power if average_power is not None else fallback_power)
+        add("marking_energy_proxy", _safe_divide(average_power, marking_count))
+        add("peak_power_kw", peak_power)
+
+    return metrics
+
+
+def _add_intermediate_columns(
+    frame: pd.DataFrame,
+    reference_frame: pd.DataFrame | None = None,
+    material: str | None = None,
+) -> pd.DataFrame:
+    output = frame.copy()
+    for column in INTERMEDIATE_METRIC_COLUMNS:
+        if column not in output:
+            output[column] = np.nan
+
+    reference = reference_frame if reference_frame is not None else output
+    thresholds = _threshold_density_by_family(reference, material)
+    for index, row in output.iterrows():
+        row_material = row.get("material") if "material" in output else material
+        if not row_material:
+            row_material = material or _dominant_material(reference)
+        family = _material_family(row_material)
+        metrics = _intermediate_metrics(row, row_material, thresholds.get(family))
+        for column, value in metrics.items():
+            output.at[index, column] = value
+    return output
+
+
+def _material_explanation(material: Any) -> str:
+    return MATERIAL_EXPLANATIONS.get(_material_family(material), MATERIAL_EXPLANATIONS["generic"])
 
 
 def _scale(frame: pd.DataFrame, column: str) -> float:
@@ -120,6 +365,7 @@ def _case_match(row: pd.Series, score: float) -> CaseMatch:
         source_file=str(row["source_file"]),
         source_row=int(row["source_row"]) if _finite(row.get("source_row")) else None,
         parameters=_number_dict(row, PARAMETER_COLUMNS),
+        intermediate_metrics=_number_dict(row, INTERMEDIATE_METRIC_COLUMNS),
         quality=_number_dict(row, QUALITY_COLUMNS),
         score=round(1.0 / (1.0 + max(score, 0.0)), 4),
     )
@@ -219,9 +465,10 @@ def _regression_targets(frame: pd.DataFrame, request: RecommendationRequest) -> 
     ]
 
 
-def _regression_features(frame: pd.DataFrame) -> list[str]:
+def _regression_features(frame: pd.DataFrame, family: str) -> list[str]:
+    candidates = MATERIAL_FEATURES.get(family, MODEL_FEATURE_COLUMNS)
     features: list[str] = []
-    for column in PARAMETER_COLUMNS:
+    for column in candidates:
         if column not in frame:
             continue
         values = frame[column].dropna()
@@ -263,13 +510,28 @@ def _fit_regression_models(
     return models, skipped
 
 
+def _filled_feature_row(row: pd.Series, columns: list[str], medians: pd.Series) -> dict[str, float]:
+    output: dict[str, float] = {}
+    for column in columns:
+        value = _to_float(row.get(column))
+        if value is None:
+            value = _to_float(medians.get(column))
+        if value is not None:
+            output[column] = value
+    return output
+
+
 def _generate_regression_candidates(
     frame: pd.DataFrame,
     feature_columns: list[str],
     scored_rows: list[tuple[Any, float]],
     request: RecommendationRequest,
 ) -> pd.DataFrame:
-    feature_frame = frame[feature_columns].copy()
+    parameter_columns = [column for column in feature_columns if column in PARAMETER_COLUMNS]
+    if not parameter_columns:
+        return pd.DataFrame()
+
+    feature_frame = frame[parameter_columns].copy()
     medians = feature_frame.median(numeric_only=True)
     minimums = feature_frame.min(numeric_only=True)
     maximums = feature_frame.max(numeric_only=True)
@@ -277,13 +539,13 @@ def _generate_regression_candidates(
 
     rows: list[dict[str, float]] = []
     for _, row in feature_frame.dropna(how="all").iterrows():
-        rows.append({column: float(row.get(column, medians[column])) for column in feature_columns})
+        rows.append(_filled_feature_row(row, parameter_columns, medians))
 
     top_indices = [index for index, _ in scored_rows[: min(12, len(scored_rows))]]
     if top_indices:
         all_feature_rows = feature_frame.dropna(how="all").reset_index(drop=True)
         for index in top_indices:
-            base = frame.loc[index, feature_columns].fillna(medians)
+            base = frame.loc[index, parameter_columns].fillna(medians)
             for _ in range(12):
                 if all_feature_rows.empty:
                     other = base
@@ -292,7 +554,7 @@ def _generate_regression_candidates(
                 alpha = float(rng.uniform(0.55, 0.9))
                 blended = alpha * base + (1.0 - alpha) * other
                 candidate: dict[str, float] = {}
-                for column in feature_columns:
+                for column in parameter_columns:
                     span = float(maximums[column] - minimums[column])
                     jitter = float(rng.normal(0, span * 0.025)) if span > 0 else 0.0
                     value = float(blended[column] + jitter)
@@ -303,7 +565,16 @@ def _generate_regression_candidates(
     generated = pd.DataFrame(rows).drop_duplicates()
     if generated.empty:
         return generated
-    return _apply_constraints(generated, request.constraints)
+
+    generated = _apply_constraints(generated, request.constraints)
+    if generated.empty:
+        return generated
+
+    material = _dominant_material(frame, request.material)
+    if material:
+        generated["material"] = material
+    generated = _add_intermediate_columns(generated, reference_frame=frame, material=material)
+    return generated.dropna(how="all", subset=[column for column in feature_columns if column in generated])
 
 
 def _predict_quality_and_uncertainty(
@@ -333,7 +604,8 @@ def _ml_recommendations(
     request: RecommendationRequest,
 ) -> tuple[list[ParameterRecommendation], list[str]]:
     notes: list[str] = []
-    feature_columns = _regression_features(frame)
+    family = _dominant_family(frame, request.material)
+    feature_columns = _regression_features(frame, family)
     target_columns = _regression_targets(frame, request)
     if not feature_columns:
         return [], ["可用参数列不足，已回退到历史相似案例推荐。"]
@@ -350,31 +622,36 @@ def _ml_recommendations(
     if generated.empty:
         return [], ["拟合候选参数生成失败，已回退到历史相似案例推荐。"]
 
-    ranked: list[tuple[float, dict[str, float], dict[str, float], dict[str, float]]] = []
+    ranked: list[tuple[float, pd.Series, dict[str, float], dict[str, float]]] = []
     for _, feature_row in generated.iterrows():
+        if any(column not in feature_row or not _finite(feature_row.get(column)) for column in feature_columns):
+            continue
         predicted, uncertainty = _predict_quality_and_uncertainty(models, feature_columns, feature_row)
         if not predicted:
             continue
         raw_score = _score_quality(predicted, frame, request)
-        ranked.append((raw_score, {column: float(feature_row[column]) for column in feature_columns}, predicted, uncertainty))
+        ranked.append((raw_score, feature_row.copy(), predicted, uncertainty))
 
     ranked.sort(key=lambda item: item[0])
     recommendations: list[ParameterRecommendation] = []
-    for rank, (raw_score, parameters, predicted, uncertainty) in enumerate(ranked[:1], start=0):
+    material = _dominant_material(frame, request.material)
+    for rank, (raw_score, feature_row, predicted, uncertainty) in enumerate(ranked[:1], start=0):
         score = round(1.0 / (1.0 + max(raw_score, 0.0)), 4)
         recommendations.append(
             ParameterRecommendation(
                 rank=rank,
                 generation_method="ml_regression_fit",
                 model_name=MODEL_INFO.model_name,
-                parameters=parameters,
+                parameters=_number_dict(feature_row, PARAMETER_COLUMNS),
+                intermediate_metrics=_number_dict(feature_row, INTERMEDIATE_METRIC_COLUMNS),
                 predicted_quality=predicted,
                 uncertainty=uncertainty,
                 score=score,
                 rationale=(
-                    "先按材料和目标质量检索相似历史案例，再用 RandomForestRegressor "
-                    f"在 {len(frame)} 条候选样本上拟合参数到质量指标的关系，并在历史参数范围内生成该候选。"
+                    "先按材料和目标质量检索相似历史案例，再按材料构造中间量，"
+                    f"用 RandomForestRegressor 在 {len(frame)} 条候选样本上拟合并生成该候选。"
                 ),
+                material_explanation=_material_explanation(material),
                 similar_cases=similar_cases,
             )
         )
@@ -418,6 +695,8 @@ def recommend_parameters(request: RecommendationRequest) -> RecommendationRespon
     else:
         candidates = constrained
 
+    candidates = _add_intermediate_columns(candidates, material=request.material)
+
     scored_rows = [
         (index, _score_row(row, candidates, request))
         for index, row in candidates.iterrows()
@@ -445,10 +724,12 @@ def recommend_parameters(request: RecommendationRequest) -> RecommendationRespon
                 generation_method="historical_similarity",
                 model_name=None,
                 parameters=_number_dict(row, PARAMETER_COLUMNS),
+                intermediate_metrics=_number_dict(row, INTERMEDIATE_METRIC_COLUMNS),
                 predicted_quality=quality,
                 uncertainty=uncertainty,
                 score=score,
                 rationale=rationale,
+                material_explanation=_material_explanation(row.get("material")),
                 similar_cases=similar_cases,
             )
         )
