@@ -36,6 +36,7 @@ class CaseMatch(BaseModel):
     source_file: str
     source_row: int | None = None
     parameters: dict[str, float]
+    intermediate_metrics: dict[str, float]
     quality: dict[str, float]
     score: float
 
@@ -55,10 +56,12 @@ class ParameterRecommendation(BaseModel):
     generation_method: str
     model_name: str | None = None
     parameters: dict[str, float]
+    intermediate_metrics: dict[str, float]
     predicted_quality: dict[str, float]
     uncertainty: dict[str, float]
     score: float
     rationale: str
+    material_explanation: str
     similar_cases: list[CaseMatch]
 
 

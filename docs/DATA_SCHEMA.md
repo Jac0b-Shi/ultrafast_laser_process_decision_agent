@@ -25,6 +25,23 @@
 | `roughness_um` | 表面粗糙度或 Sa |
 | `raw_record` | 原始行 JSON |
 
+## 推荐响应中间量
+
+中间量只在推荐请求中即时计算，不写回原始 Excel，也不覆盖历史反馈。API 返回内部字段名，网页端统一展示为中英对照名称、单位和 KaTeX 公式。
+
+| 字段 | 网页展示 | 公式 |
+|---|---|---|
+| `line_pulse_density_pulses_mm` | 线脉冲密度 line pulse density (pulses/mm) | `N_L = \frac{1000f}{v}` |
+| `pulse_spacing_um` | 脉冲间距 pulse spacing (μm) | `\Delta x = \frac{1000v}{f}` |
+| `threshold_relative_density` | 阈值相对密度 threshold-relative density (ratio) | `\rho = \frac{N_L}{N_c}` |
+| `cumulative_pulse_density` | 累积脉冲密度 cumulative pulse density (pulses/mm) | `N_{\mathrm{cum}} = N_L \times n` |
+| `dose_index` | 剂量指数 dose index (pulses/(mm·μm)) | `I_d = \frac{N_L \times n}{h}` |
+| `pulse_time_interaction` | 脉宽-时间交互 pulse-time interaction (fs·s) | `\tau t = \tau \times t` |
+| `duty_cycle` | 占空比 duty cycle (ratio) | `DC = \tau \times f \times 10^{-12}` |
+| `power_chain_proxy_w` | 功率链代理 power-chain proxy (W) | `P_{\mathrm{proxy}} = P_{\mathrm{avg}}` |
+| `marking_energy_proxy` | 标记能量代理 marking energy proxy (W/count) | `E_{\mathrm{mark}} = \frac{P_{\mathrm{avg}}}{n}` |
+| `peak_power_kw` | 峰值功率 peak power (kW) | `P_{\mathrm{peak}}` |
+
 ## 异常值策略
 
 - 空值保留为 `null`。

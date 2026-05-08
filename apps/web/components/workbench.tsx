@@ -2,9 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Database, FlaskConical, RefreshCcw, Save, Send } from "lucide-react";
+import { BlockMath } from "react-katex";
 
 import { apiFetch } from "@/lib/api";
-import type { DatasetSummary, ModelInfo, RecommendationResponse } from "@/types/api";
+import {
+  formatMetricText,
+  getMetricDisplay,
+  metricLabel,
+  SCORE_EXPLANATION,
+  SCORE_FORMULAS,
+} from "@/lib/metric-display";
+import type { DatasetSummary, ModelInfo, Recommendation, RecommendationResponse } from "@/types/api";
 
 type FormState = {
   material: string;
@@ -32,7 +40,29 @@ function toNumber(value: string): number | null {
 }
 
 function formatValue(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+  if (!Number.isFinite(value)) return "-";
+  const abs = Math.abs(value);
+  if (abs !== 0 && abs < 0.001) return value.toExponential(3);
+  if (abs >= 10000) {
+    return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(value);
+  }
+  if (Number.isInteger(value)) return String(value);
+  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 4 }).format(value);
+}
+
+function formatScore(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(4) : "-";
+}
+
+function formatMathValue(value: number): string {
+  if (!Number.isFinite(value)) return String.raw`\text{不可用}`;
+  const abs = Math.abs(value);
+  if (abs !== 0 && (abs < 0.001 || abs >= 1_000_000)) {
+    const [mantissa, exponent] = value.toExponential(3).split("e");
+    return String.raw`${mantissa} \times 10^{${Number(exponent)}}`;
+  }
+  if (Number.isInteger(value)) return String(value);
+  return String(Number(value.toFixed(4)));
 }
 
 function MetricGrid({ values }: { values: Record<string, number> }) {
@@ -45,8 +75,87 @@ function MetricGrid({ values }: { values: Record<string, number> }) {
     <div className="kv-grid">
       {entries.map(([key, value]) => (
         <div className="kv" key={key}>
-          <span>{key}</span>
+          <span>{metricLabel(key)}</span>
           <strong>{formatValue(value)}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ScoreFormulaNote() {
+  return (
+    <div className="score-note">
+      <div className="score-formula-list">
+        {SCORE_FORMULAS.map((formula) => (
+          <BlockMath
+            key={formula}
+            math={formula}
+            renderError={() => <code>{formula}</code>}
+          />
+        ))}
+      </div>
+      <p>{SCORE_EXPLANATION}</p>
+    </div>
+  );
+}
+
+function FormulaMetricGrid({ values }: { values: Record<string, number> }) {
+  const entries = Object.entries(values);
+  if (entries.length === 0) {
+    return <p className="muted">暂无可展示指标</p>;
+  }
+
+  return (
+    <div className="formula-grid">
+      {entries.map(([key, value]) => {
+        const metric = getMetricDisplay(key);
+        return (
+          <div className="formula-card" key={key}>
+            <div className="formula-card-header">
+              <span>{metricLabel(key)}</span>
+            </div>
+            {metric.formula && (
+              <div className="formula-expression">
+                <BlockMath
+                  math={`${metric.formula} = ${formatMathValue(value)}`}
+                  renderError={() => <code>{`${metric.formula} = ${formatValue(value)}`}</code>}
+                />
+              </div>
+            )}
+            {!metric.formula && <strong className="formula-value">{formatValue(value)}</strong>}
+            {metric.variables && <p className="formula-note">{metric.variables}</p>}
+            {metric.note && <p className="formula-note">{metric.note}</p>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SimilarCases({ cases }: { cases: Recommendation["similar_cases"] }) {
+  if (cases.length === 0) {
+    return <p className="muted">暂无相似案例依据</p>;
+  }
+
+  return (
+    <div className="case-list">
+      {cases.map((item) => (
+        <div className="case-item" key={item.case_id}>
+          <div className="case-title">
+            <strong>{item.case_id}</strong>
+            <span className="score">相似度 {formatScore(item.score)}</span>
+          </div>
+          <p className="muted">
+            {item.material} · {item.source_file}
+            {item.source_row ? `:${item.source_row}` : ""}
+          </p>
+          <h4>案例参数</h4>
+          <MetricGrid values={item.parameters} />
+          <h4>案例中间量</h4>
+          <FormulaMetricGrid values={item.intermediate_metrics} />
+          <h4>案例质量</h4>
+          <MetricGrid values={item.quality} />
         </div>
       ))}
     </div>
@@ -203,11 +312,11 @@ export function Workbench() {
                 </select>
               </div>
               <div className="field">
-                <label htmlFor="depth">目标深度 um</label>
+                <label htmlFor="depth">目标深度 (μm)</label>
                 <input id="depth" value={form.targetDepth} onChange={(event) => setForm({ ...form, targetDepth: event.target.value })} />
               </div>
               <div className="field">
-                <label htmlFor="diameter">目标直径 um</label>
+                <label htmlFor="diameter">目标直径 (μm)</label>
                 <input
                   id="diameter"
                   value={form.targetDiameter}
@@ -217,7 +326,7 @@ export function Workbench() {
                 />
               </div>
               <div className="field">
-                <label htmlFor="roughness">粗糙度上限 um</label>
+                <label htmlFor="roughness">粗糙度上限 (μm)</label>
                 <input id="roughness" value={form.maxRoughness} onChange={(event) => setForm({ ...form, maxRoughness: event.target.value })} />
               </div>
               <div className="field">
@@ -239,7 +348,7 @@ export function Workbench() {
           <div className="panel">
             <div className="panel-header">
               <h2>模型状态</h2>
-              <span className="muted">{modelInfo?.model_name ?? "加载中"}</span>
+              <span className="muted">版本 {modelInfo?.model_version ?? "-"}</span>
             </div>
             <div className="panel-body">
               <div className="model-box">
@@ -260,7 +369,7 @@ export function Workbench() {
                 <div className="material-item" key={item.material}>
                   <div>
                     <strong>{item.material}</strong>
-                    <div className="muted">{item.quality_metrics.join(", ") || "暂无质量指标"}</div>
+                    <div className="muted">{item.quality_metrics.map(metricLabel).join(", ") || "暂无质量指标"}</div>
                   </div>
                   <span className="badge">{item.sample_count} 条</span>
                 </div>
@@ -274,7 +383,7 @@ export function Workbench() {
               <span className="muted">{result ? `${result.candidate_size} 条候选` : "等待任务输入"}</span>
             </div>
             <div className="panel-body results">
-              {result?.notes.map((note) => <p className="muted" key={note}>{note}</p>)}
+              {result?.notes.map((note) => <p className="muted" key={note}>{formatMetricText(note)}</p>)}
               {result?.model_info && (
                 <p className="muted">
                   本次使用：{result.model_info.model_type}，版本 {result.model_info.model_version}
@@ -287,16 +396,22 @@ export function Workbench() {
                     <button className="button secondary" onClick={() => setSelectedRank(item.rank)}>
                       选择
                     </button>
-                    <span className="score">得分 {item.score}</span>
+                    <span className="score">得分 {formatScore(item.score)}</span>
                   </div>
+                  <ScoreFormulaNote />
                   <span className="badge">
                     {item.generation_method === "ml_regression_fit" ? "机器学习拟合" : "历史相似案例"}
                   </span>
                   <p className="muted">{item.rationale}</p>
+                  <p className="muted">{item.material_explanation}</p>
                   <h3>参数</h3>
                   <MetricGrid values={item.parameters} />
+                  <h3>中间量</h3>
+                  <FormulaMetricGrid values={item.intermediate_metrics} />
                   <h3>预测质量</h3>
                   <MetricGrid values={item.predicted_quality} />
+                  <h3>相似案例依据</h3>
+                  <SimilarCases cases={item.similar_cases} />
                 </article>
               ))}
             </div>
