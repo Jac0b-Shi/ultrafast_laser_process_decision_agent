@@ -1,0 +1,127 @@
+version: '1.0'
+name: main-docker-deploy
+displayName: main分支Docker自动部署
+triggers:
+  trigger: manual
+  push:
+    branches:
+      precise:
+        - main
+variables:
+  REGISTRY: crpi-v3f25e0qtnv1cbc5.cn-shanghai.personal.cr.aliyuncs.com
+  IMAGE_REPO: jac0b_shi/ultrafast_laser_process_decision_agent
+  API_IMAGE_TAG: api-latest
+  WEB_IMAGE_TAG: web-latest
+  DEPLOY_DIR: /opt/ultrafast_laser_process_decision_agent
+  global:
+    - DOCKERHUB_PROXY
+stages:
+  - name: build
+    displayName: 构建镜像
+    strategy: naturally
+    trigger: auto
+    executor:
+      - Jac0b_Shi
+    steps:
+      - step: build@docker
+        name: build_api
+        displayName: 构建API镜像
+        type: cert
+        certificate: 4b0d7270-2d91-013f-1c16-2ed309e749e7
+        tag: ${IMAGE_REPO}:${API_IMAGE_TAG}
+        dockerfile: ./apps/api/Dockerfile
+        isCache: false
+        processorType:
+          - amd64
+        parameter:
+          API_BASE_IMAGE: ${DOCKERHUB_PROXY}/library/python:3.12-slim
+          PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple
+          PIP_TRUSTED_HOST: mirrors.aliyun.com
+        strategy: {}
+      - step: build@docker
+        name: build_web
+        displayName: 构建Web镜像
+        type: cert
+        certificate: 4b0d7270-2d91-013f-1c16-2ed309e749e7
+        tag: ${IMAGE_REPO}:${WEB_IMAGE_TAG}
+        dockerfile: ./apps/web/Dockerfile
+        isCache: false
+        processorType:
+          - amd64
+        parameter:
+          WEB_BASE_IMAGE: ${DOCKERHUB_PROXY}/library/node:22-alpine
+        strategy: {}
+  - name: deploy
+    displayName: 部署到服务器
+    strategy: naturally
+    trigger: auto
+    steps:
+      - step: shell@agent
+        name: deploy_compose
+        displayName: Docker Compose 更新容器
+        schedulerType: POOL
+        hostGroupID:
+          ID: server-shu
+          hostID:
+            - f9e02b10-3ae8-43a7-8a24-c089ad13f938
+        scriptType: SH
+        script:
+          - |
+            bash -Eeuo pipefail <<'BASH'
+            : "${DEPLOY_DIR:=/opt/ultrafast_laser_process_decision_agent}"
+            : "${REGISTRY:=crpi-v3f25e0qtnv1cbc5.cn-shanghai.personal.cr.aliyuncs.com}"
+            : "${DEPLOY_REPO_URL:=https://gitee.com/SHU-SPE-Sandrone/ultrafast_laser_process_decision_agent.git}"
+
+            echo "==> current user"
+            whoami
+            id
+
+            echo "==> prepare deploy directory: ${DEPLOY_DIR}"
+            mkdir -p "${DEPLOY_DIR}"
+
+            if [ ! -d "${DEPLOY_DIR}/.git" ]; then
+              echo "deploy directory is empty or not a git repo, cloning..."
+              rm -rf "${DEPLOY_DIR:?}/"*
+              git clone "${DEPLOY_REPO_URL}" "${DEPLOY_DIR}"
+            fi
+
+            cd "${DEPLOY_DIR}"
+
+            echo "==> refresh compose file from main"
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "==> docker compose version"
+            if docker compose version >/dev/null 2>&1; then
+              COMPOSE="docker compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE="docker-compose"
+            else
+              echo "ERROR: neither docker compose nor docker-compose is available"
+              exit 1
+            fi
+
+            echo "==> login to registry if credentials are provided"
+            if [ -n "${ALIYUN_REGISTRY_USERNAME:-}" ] && [ -n "${ALIYUN_REGISTRY_PASSWORD:-}" ]; then
+              echo "${ALIYUN_REGISTRY_PASSWORD}" | docker login "${REGISTRY}" \
+                -u "${ALIYUN_REGISTRY_USERNAME}" \
+                --password-stdin
+            fi
+
+            echo "==> verify compose file"
+            test -f docker-compose.prod.yml
+            $COMPOSE -f docker-compose.prod.yml config
+
+            echo "==> pull images"
+            $COMPOSE -f docker-compose.prod.yml pull
+
+            echo "==> recreate services"
+            $COMPOSE -f docker-compose.prod.yml up -d --remove-orphans
+
+            echo "==> cleanup old images"
+            docker image prune -f
+
+            echo "==> deployment status"
+            $COMPOSE -f docker-compose.prod.yml ps
+            BASH
+        strategy: {}
