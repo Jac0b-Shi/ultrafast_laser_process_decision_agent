@@ -2,7 +2,7 @@ version: '1.0'
 name: main-docker-deploy
 displayName: main分支Docker自动部署
 triggers:
-  trigger: manual
+  trigger: auto
   push:
     branches:
       precise:
