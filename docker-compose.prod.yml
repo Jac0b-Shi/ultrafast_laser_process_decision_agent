@@ -5,11 +5,16 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      LASER_DATA_DIR: /workspace/data
+      LASER_EXPERIMENTS_DIR: /workspace/experiments
+      LASER_CONFIG_DIR: /workspace/configs
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
-      - ./data:/app/data
-      - ./experiments:/app/experiments
+      - ./data:/workspace/data
+      - ./experiments:/workspace/experiments
+      - ./configs:/workspace/configs:ro
 
   web:
     image: crpi-v3f25e0qtnv1cbc5.cn-shanghai.personal.cr.aliyuncs.com/jac0b_shi/ultrafast_laser_process_decision_agent:web-latest
@@ -19,5 +24,8 @@ services:
       - api
     env_file:
       - .env
+    environment:
+      API_INTERNAL_URL: ${API_INTERNAL_URL:-http://api:8000}
+      NEXT_PUBLIC_API_BASE_URL: ""
     ports:
       - "${WEB_PORT:-3000}:3000"
