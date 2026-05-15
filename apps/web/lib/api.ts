@@ -12,6 +12,11 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   if (!response.ok) {
     const body = await response.text();
     if (body) {
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(`API 请求失败：HTTP ${response.status}`);
+      }
+
       let parsed: { detail?: unknown } | null = null;
       try {
         parsed = JSON.parse(body) as { detail?: unknown };

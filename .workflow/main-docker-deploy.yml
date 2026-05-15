@@ -81,7 +81,12 @@ stages:
 
             if [ ! -d "${DEPLOY_DIR}/.git" ]; then
               echo "deploy directory is empty or not a git repo, cloning..."
-              rm -rf "${DEPLOY_DIR:?}/"*
+              if find "${DEPLOY_DIR}" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
+                BACKUP_DIR="${DEPLOY_DIR}.pre-git-$(date +%Y%m%d%H%M%S)"
+                echo "existing non-git deploy directory found, moving it to ${BACKUP_DIR}"
+                mv "${DEPLOY_DIR}" "${BACKUP_DIR}"
+                mkdir -p "${DEPLOY_DIR}"
+              fi
               git clone "${DEPLOY_REPO_URL}" "${DEPLOY_DIR}"
             fi
 
@@ -90,6 +95,17 @@ stages:
             echo "==> refresh compose file from main"
             git fetch origin main
             git reset --hard origin/main
+
+            echo "==> validate deployment inputs"
+            RAW_COUNT="$(find data/raw -maxdepth 1 -type f -name '*.xlsx' 2>/dev/null | wc -l | tr -d ' ')"
+            if [ "${RAW_COUNT}" -eq 0 ]; then
+              echo "ERROR: no raw Excel files found under data/raw; refusing to deploy empty dataset"
+              exit 1
+            fi
+            grep -q 'LASER_DATA_DIR: /workspace/data' docker-compose.prod.yml
+            grep -q './data:/workspace/data' docker-compose.prod.yml
+            grep -q 'API_INTERNAL_URL:' docker-compose.prod.yml
+            mkdir -p experiments/runs experiments/feedback_logs
 
             echo "==> docker compose version"
             if docker compose version >/dev/null 2>&1; then
