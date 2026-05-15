@@ -41,6 +41,8 @@ experiments/feedback_logs/*
 Thumbs.db
 .idea/
 .vscode/
+.claude/
+.playwright-mcp/
 
 # Shared IDE run entries
 !.run/
