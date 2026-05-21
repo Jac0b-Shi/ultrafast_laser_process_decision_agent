@@ -1,6 +1,6 @@
 services:
   api:
-    image: crpi-v3f25e0qtnv1cbc5.cn-shanghai.personal.cr.aliyuncs.com/jac0b_shi/ultrafast_laser_process_decision_agent:api-latest
+    image: ccr.ccs.tencentyun.com/jacobshi/ultrafast_laser_process_decision_agent-api:latest
     container_name: ultrafast-api
     restart: unless-stopped
     env_file:
@@ -17,7 +17,7 @@ services:
       - ./configs:/workspace/configs:ro
 
   web:
-    image: crpi-v3f25e0qtnv1cbc5.cn-shanghai.personal.cr.aliyuncs.com/jac0b_shi/ultrafast_laser_process_decision_agent:web-latest
+    image: ccr.ccs.tencentyun.com/jacobshi/ultrafast_laser_process_decision_agent-web:latest
     container_name: ultrafast-web
     restart: unless-stopped
     depends_on:
@@ -29,3 +29,4 @@ services:
       NEXT_PUBLIC_API_BASE_URL: ""
     ports:
       - "${WEB_PORT:-3000}:3000"
+
