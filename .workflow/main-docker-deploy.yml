@@ -8,10 +8,11 @@ triggers:
       precise:
         - main
 variables:
-  REGISTRY: crpi-v3f25e0qtnv1cbc5.cn-shanghai.personal.cr.aliyuncs.com
-  IMAGE_REPO: jac0b_shi/ultrafast_laser_process_decision_agent
-  API_IMAGE_TAG: api-latest
-  WEB_IMAGE_TAG: web-latest
+  REGISTRY: ccr.ccs.tencentyun.com
+  API_IMAGE_REPO: jacobshi/ultrafast_laser_process_decision_agent-api
+  WEB_IMAGE_REPO: jacobshi/ultrafast_laser_process_decision_agent-web
+  API_IMAGE_TAG: latest
+  WEB_IMAGE_TAG: latest
   DEPLOY_DIR: /opt/ultrafast_laser_process_decision_agent
   global:
     - DOCKERHUB_PROXY
@@ -27,25 +28,25 @@ stages:
         name: build_api
         displayName: 构建API镜像
         type: cert
-        certificate: 4b0d7270-2d91-013f-1c16-2ed309e749e7
-        tag: ${IMAGE_REPO}:${API_IMAGE_TAG}
+        certificate: 497be600-2dd4-013f-f852-16e62a0a3a44
+        tag: ${API_IMAGE_REPO}:${API_IMAGE_TAG}
         dockerfile: ./apps/api/Dockerfile
-        isCache: false
+        isCache: true
         processorType:
           - amd64
         parameter:
           API_BASE_IMAGE: ${DOCKERHUB_PROXY}/library/python:3.12-slim
-          PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple
-          PIP_TRUSTED_HOST: mirrors.aliyun.com
+          PIP_INDEX_URL: https://mirrors.tencent.com/pypi/simple
+          PIP_TRUSTED_HOST: mirrors.tencent.com
         strategy: {}
       - step: build@docker
         name: build_web
         displayName: 构建Web镜像
         type: cert
-        certificate: 4b0d7270-2d91-013f-1c16-2ed309e749e7
-        tag: ${IMAGE_REPO}:${WEB_IMAGE_TAG}
+        certificate: 497be600-2dd4-013f-f852-16e62a0a3a44
+        tag: ${WEB_IMAGE_REPO}:${WEB_IMAGE_TAG}
         dockerfile: ./apps/web/Dockerfile
-        isCache: false
+        isCache: true
         processorType:
           - amd64
         parameter:
@@ -69,7 +70,7 @@ stages:
           - |
             bash -Eeuo pipefail <<'BASH'
             : "${DEPLOY_DIR:=/opt/ultrafast_laser_process_decision_agent}"
-            : "${REGISTRY:=crpi-v3f25e0qtnv1cbc5.cn-shanghai.personal.cr.aliyuncs.com}"
+            : "${REGISTRY:=ccr.ccs.tencentyun.com}"
             : "${DEPLOY_REPO_URL:=https://gitee.com/SHU-SPE-Sandrone/ultrafast_laser_process_decision_agent.git}"
 
             echo "==> current user"
@@ -118,9 +119,9 @@ stages:
             fi
 
             echo "==> login to registry if credentials are provided"
-            if [ -n "${ALIYUN_REGISTRY_USERNAME:-}" ] && [ -n "${ALIYUN_REGISTRY_PASSWORD:-}" ]; then
-              echo "${ALIYUN_REGISTRY_PASSWORD}" | docker login "${REGISTRY}" \
-                -u "${ALIYUN_REGISTRY_USERNAME}" \
+            if [ -n "${TCR_REGISTRY_USERNAME:-}" ] && [ -n "${TCR_REGISTRY_PASSWORD:-}" ]; then
+              echo "${TCR_REGISTRY_PASSWORD}" | docker login "${REGISTRY}" \
+                -u "${TCR_REGISTRY_USERNAME}" \
                 --password-stdin
             fi
 
@@ -141,3 +142,8 @@ stages:
             $COMPOSE -f docker-compose.prod.yml ps
             BASH
         strategy: {}
+
+
+
+
+
