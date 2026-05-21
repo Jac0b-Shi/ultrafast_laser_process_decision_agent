@@ -74,4 +74,3 @@ tests           跨模块测试占位
 git@gitee.com:SHU-SPE-Sandrone/ultrafast_laser_process_decision_agent.git
 ```
 
-默认分支为 `main`，首个提交应使用签名提交。
