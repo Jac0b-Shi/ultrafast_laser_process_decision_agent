@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import math
+import time
 from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LinearRegression
+from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import Pipeline
+from sklearn.svm import SVR
 
 from app.schemas import CaseMatch, ModelInfo, ParameterRecommendation, RecommendationRequest, RecommendationResponse
 from app.services.data_loader import PARAMETER_COLUMNS, QUALITY_COLUMNS, load_dataset
@@ -45,6 +49,49 @@ MODEL_INFO = ModelInfo(
 
 MIN_REGRESSION_SAMPLES = 6
 RANDOM_STATE = 42
+
+ALGORITHM_REGRESSORS: dict[str, dict[str, Any]] = {
+    "random_forest": {
+        "cls": RandomForestRegressor,
+        "kwargs": {"n_estimators": 160, "min_samples_leaf": 2, "random_state": RANDOM_STATE},
+        "label": "随机森林",
+        "label_en": "RandomForestRegressor",
+        "has_feature_importance": True,
+        "has_estimators": True,
+    },
+    "neural_network": {
+        "cls": MLPRegressor,
+        "kwargs": {"hidden_layer_sizes": (100, 50), "max_iter": 2000, "random_state": RANDOM_STATE, "early_stopping": True},
+        "label": "神经网络",
+        "label_en": "MLPRegressor",
+        "has_feature_importance": False,
+        "has_estimators": False,
+    },
+    "gradient_boosting": {
+        "cls": GradientBoostingRegressor,
+        "kwargs": {"n_estimators": 100, "max_depth": 4, "random_state": RANDOM_STATE},
+        "label": "梯度提升",
+        "label_en": "GradientBoostingRegressor",
+        "has_feature_importance": True,
+        "has_estimators": True,
+    },
+    "linear_regression": {
+        "cls": LinearRegression,
+        "kwargs": {},
+        "label": "线性回归",
+        "label_en": "LinearRegression",
+        "has_feature_importance": False,
+        "has_estimators": False,
+    },
+    "svr": {
+        "cls": SVR,
+        "kwargs": {"kernel": "rbf"},
+        "label": "支持向量机",
+        "label_en": "SVR",
+        "has_feature_importance": False,
+        "has_estimators": False,
+    },
+}
 
 MATERIAL_FEATURES = {
     "bf33": [
@@ -481,33 +528,40 @@ def _fit_regression_models(
     frame: pd.DataFrame,
     feature_columns: list[str],
     target_columns: list[str],
-) -> tuple[dict[str, Pipeline], list[str]]:
+    algorithm: str = "random_forest",
+) -> tuple[dict[str, Pipeline], list[str], dict[str, Any]]:
     models: dict[str, Pipeline] = {}
     skipped: list[str] = []
     feature_ready = frame[feature_columns].notna().any(axis=1)
+    total_samples = 0
+    t_start = time.perf_counter()
+
+    algo = ALGORITHM_REGRESSORS.get(algorithm, ALGORITHM_REGRESSORS["random_forest"])
+    regressor = algo["cls"](**algo["kwargs"])
 
     for target in target_columns:
         train = frame[feature_ready & frame[target].notna()]
         if len(train) < MIN_REGRESSION_SAMPLES:
             skipped.append(target)
             continue
+        total_samples = max(total_samples, int(len(train)))
         model = Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="median")),
-                (
-                    "regressor",
-                    RandomForestRegressor(
-                        n_estimators=160,
-                        min_samples_leaf=2,
-                        random_state=RANDOM_STATE,
-                    ),
-                ),
+                ("regressor", regressor),
             ]
         )
         model.fit(train[feature_columns], train[target])
         models[target] = model
 
-    return models, skipped
+    t_end = time.perf_counter()
+    training_info: dict[str, Any] = {
+        "algorithm": algo["label"],
+        "algorithm_key": algorithm,
+        "training_samples": total_samples,
+        "training_time_ms": round((t_end - t_start) * 1000, 2),
+    }
+    return models, skipped, training_info
 
 
 def _filled_feature_row(row: pd.Series, columns: list[str], medians: pd.Series) -> dict[str, float]:
@@ -590,11 +644,34 @@ def _predict_quality_and_uncertainty(
         prediction = float(model.predict(input_frame)[0])
         predicted[target] = round(prediction, 4)
         regressor = model.named_steps["regressor"]
-        transformed = model.named_steps["imputer"].transform(input_frame)
-        tree_predictions = [float(tree.predict(transformed)[0]) for tree in regressor.estimators_]
-        uncertainty[target] = round(float(np.std(tree_predictions)), 4)
+        try:
+            transformed = model.named_steps["imputer"].transform(input_frame)
+            tree_predictions = [float(tree.predict(transformed)[0]) for tree in regressor.estimators_]
+            uncertainty[target] = round(float(np.std(tree_predictions)), 4)
+        except AttributeError:
+            uncertainty[target] = 0.0
 
     return predicted, uncertainty
+
+
+def _extract_feature_importance(
+    models: dict[str, Pipeline],
+    feature_columns: list[str],
+) -> dict[str, float] | None:
+    importances: dict[str, list[float]] = {}
+    for model in models.values():
+        regressor = model.named_steps["regressor"]
+        try:
+            fi = regressor.feature_importances_
+        except AttributeError:
+            continue
+        for col, val in zip(feature_columns, fi):
+            if col not in importances:
+                importances[col] = []
+            importances[col].append(float(val))
+    if not importances:
+        return None
+    return {col: round(sum(vals) / len(vals), 4) for col, vals in importances.items()}
 
 
 def _ml_recommendations(
@@ -607,16 +684,26 @@ def _ml_recommendations(
     family = _dominant_family(frame, request.material)
     feature_columns = _regression_features(frame, family)
     target_columns = _regression_targets(frame, request)
+    algorithm = getattr(request, "algorithm", "random_forest") or "random_forest"
+    algo = ALGORITHM_REGRESSORS.get(algorithm, ALGORITHM_REGRESSORS["random_forest"])
+    algo_label = algo["label"]
+    algo_label_en = algo["label_en"]
+
     if not feature_columns:
         return [], ["可用参数列不足，已回退到历史相似案例推荐。"]
     if not target_columns:
         return [], ["可用质量指标样本不足，已回退到历史相似案例推荐。"]
 
-    models, skipped = _fit_regression_models(frame, feature_columns, target_columns)
+    models, skipped, training_info = _fit_regression_models(frame, feature_columns, target_columns, algorithm)
     if not models:
         return [], ["回归模型训练样本不足，已回退到历史相似案例推荐。"]
     if skipped:
         notes.append(f"以下质量指标样本不足，未训练回归模型：{', '.join(skipped)}。")
+
+    # feature importance
+    feature_importance = _extract_feature_importance(models, feature_columns)
+    if feature_importance:
+        training_info["feature_count"] = len(feature_importance)
 
     generated = _generate_regression_candidates(frame, feature_columns, scored_rows, request)
     if generated.empty:
@@ -635,6 +722,28 @@ def _ml_recommendations(
     ranked.sort(key=lambda item: item[0])
     recommendations: list[ParameterRecommendation] = []
     material = _dominant_material(frame, request.material)
+
+    # error metrics for the best candidate
+    best_error_metrics: dict[str, dict[str, float]] | None = None
+    if ranked:
+        _, best_row, best_pred, _ = ranked[0]
+        error_metrics: dict[str, dict[str, float]] = {}
+        for target in target_columns:
+            if target in best_pred and target in frame:
+                actuals = frame[target].dropna()
+                if len(actuals) > 0:
+                    pred_val = best_pred[target]
+                    # MAE against historical mean as proxy
+                    mean_actual = float(actuals.mean())
+                    error_metrics[target] = {
+                        "mae_vs_mean": round(abs(pred_val - mean_actual), 4),
+                        "predicted": round(pred_val, 4),
+                        "historical_mean": round(mean_actual, 4),
+                        "historical_std": round(float(actuals.std()), 4) if len(actuals) > 1 else 0.0,
+                    }
+        if error_metrics:
+            best_error_metrics = error_metrics
+
     for rank, (raw_score, feature_row, predicted, uncertainty) in enumerate(ranked[:1], start=0):
         score = round(1.0 / (1.0 + max(raw_score, 0.0)), 4)
         recommendations.append(
@@ -642,6 +751,7 @@ def _ml_recommendations(
                 rank=rank,
                 generation_method="ml_regression_fit",
                 model_name=MODEL_INFO.model_name,
+                algorithm=algo_label,
                 parameters=_number_dict(feature_row, PARAMETER_COLUMNS),
                 intermediate_metrics=_number_dict(feature_row, INTERMEDIATE_METRIC_COLUMNS),
                 predicted_quality=predicted,
@@ -649,16 +759,19 @@ def _ml_recommendations(
                 score=score,
                 rationale=(
                     "先按材料和目标质量检索相似历史案例，再按材料构造中间量，"
-                    f"用 RandomForestRegressor 在 {len(frame)} 条候选样本上拟合并生成该候选。"
+                    f"用 {algo_label} 在 {len(frame)} 条候选样本上拟合并生成该候选。"
                 ),
                 material_explanation=_material_explanation(material),
                 similar_cases=similar_cases,
+                feature_importance=feature_importance,
+                error_metrics=best_error_metrics,
+                training_info=training_info,
             )
         )
 
     if recommendations:
         notes.append(
-            f"已训练 {len(models)} 个随机森林回归模型，输入特征：{', '.join(feature_columns)}；"
+            f"已训练 {len(models)} 个{algo_label}回归模型，输入特征：{', '.join(feature_columns)}；"
             f"拟合目标：{', '.join(models.keys())}。"
         )
     return recommendations, notes

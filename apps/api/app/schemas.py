@@ -28,6 +28,7 @@ class RecommendationRequest(BaseModel):
     max_roughness_um: float | None = None
     constraints: dict[str, Any] = Field(default_factory=dict)
     top_k: int = Field(default=3, ge=1, le=10)
+    algorithm: str = Field(default="random_forest", description="回归算法: random_forest | neural_network | gradient_boosting | linear_regression | svr")
 
 
 class CaseMatch(BaseModel):
@@ -55,6 +56,7 @@ class ParameterRecommendation(BaseModel):
     rank: int
     generation_method: str
     model_name: str | None = None
+    algorithm: str | None = None
     parameters: dict[str, float]
     intermediate_metrics: dict[str, float]
     predicted_quality: dict[str, float]
@@ -63,6 +65,9 @@ class ParameterRecommendation(BaseModel):
     rationale: str
     material_explanation: str
     similar_cases: list[CaseMatch]
+    feature_importance: dict[str, float] | None = None
+    error_metrics: dict[str, dict[str, float]] | None = None
+    training_info: dict[str, Any] | None = None
 
 
 class RecommendationResponse(BaseModel):
