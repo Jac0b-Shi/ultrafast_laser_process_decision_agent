@@ -9,6 +9,7 @@ type FormState = {
   targetDiameter: string;
   maxRoughness: string;
   topK: string;
+  algorithm: string;
 };
 
 type Props = {
@@ -21,6 +22,7 @@ type Props = {
   onChangeMaterial: (material: string) => void;
   onChangeField: (field: keyof FormState, value: string) => void;
   onSubmit: () => void;
+  onAlgorithmChange?: (algorithm: string) => void;
 };
 
 export function TaskInput({
@@ -33,6 +35,7 @@ export function TaskInput({
   onChangeMaterial,
   onChangeField,
   onSubmit,
+  onAlgorithmChange,
 }: Props) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -104,6 +107,36 @@ export function TaskInput({
             placeholder="留空则不限制"
             className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
           />
+        </div>
+
+        {/* algorithm selector */}
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1.5">算法选择</label>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { value: "random_forest", label: "随机森林" },
+              { value: "neural_network", label: "神经网络" },
+              { value: "gradient_boosting", label: "梯度提升" },
+              { value: "linear_regression", label: "线性回归" },
+              { value: "svr", label: "支持向量机" },
+            ].map((algo) => (
+              <button
+                key={algo.value}
+                type="button"
+                onClick={() => {
+                  onChangeField("algorithm", algo.value);
+                  onAlgorithmChange?.(algo.value);
+                }}
+                className={`py-2 text-sm rounded-lg border transition-colors ${
+                  form.algorithm === algo.value
+                    ? "border-primary bg-primary-50 text-primary font-semibold"
+                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                {algo.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* topK */}

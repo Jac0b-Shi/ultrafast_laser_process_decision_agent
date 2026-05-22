@@ -119,6 +119,7 @@ type Props = {
 export function RecommendationCard({ recommendation: rec, isSelected, onSelect }: Props) {
   const isML = rec.generation_method === "ml_regression_fit";
   const scorePercent = Math.round(rec.score * 100);
+  const algoLabel = rec.algorithm ?? (isML ? "机器学习" : "历史案例");
 
   return (
     <article
@@ -137,7 +138,7 @@ export function RecommendationCard({ recommendation: rec, isSelected, onSelect }
                   : "bg-primary-50 text-primary border border-primary-100"
               }`}
             >
-              {isML ? "机器学习拟合" : `推荐 #${rec.rank}`}
+              {isML ? algoLabel : `推荐 #${rec.rank}`}
             </span>
             {isML && rec.model_name && (
               <span className="text-xs text-gray-400">{rec.model_name}</span>
@@ -216,6 +217,104 @@ export function RecommendationCard({ recommendation: rec, isSelected, onSelect }
             <MetricGrid values={rec.predicted_quality} />
           </div>
         </details>
+
+        {rec.feature_importance && Object.keys(rec.feature_importance).length > 0 && (
+          <details className="group">
+            <summary className="px-5 py-3 cursor-pointer select-none flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900">
+              <span className="text-gray-400 group-open:rotate-90 transition-transform">▸</span>
+              特征重要性
+            </summary>
+            <div className="px-5 pb-4">
+              <div className="space-y-1.5">
+                {Object.entries(rec.feature_importance)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([feature, importance]) => (
+                    <div key={feature} className="flex items-center gap-2">
+                      <span className="text-xs text-gray-600 w-44 truncate" title={feature}>
+                        {feature}
+                      </span>
+                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary rounded-full"
+                          style={{ width: `${Math.min(importance * 100, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-gray-500 font-mono w-14 text-right">
+                        {importance.toFixed(3)}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </details>
+        )}
+
+        {rec.error_metrics && (
+          <details className="group">
+            <summary className="px-5 py-3 cursor-pointer select-none flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900">
+              <span className="text-gray-400 group-open:rotate-90 transition-transform">▸</span>
+              误差指标
+            </summary>
+            <div className="px-5 pb-4">
+              <div className="space-y-2">
+                {Object.entries(rec.error_metrics).map(([target, metrics]) => (
+                  <div key={target} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                    <h5 className="text-xs font-medium text-gray-600 mb-2">{target}</h5>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-gray-400">预测值</span>
+                        <strong className="block text-gray-900">{formatValue(metrics.predicted)}</strong>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">历史均值</span>
+                        <strong className="block text-gray-900">{formatValue(metrics.historical_mean)}</strong>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">历史标准差</span>
+                        <strong className="block text-gray-900">{formatValue(metrics.historical_std)}</strong>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">MAE vs 均值</span>
+                        <strong className="block text-gray-900">{formatValue(metrics.mae_vs_mean)}</strong>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </details>
+        )}
+
+        {rec.training_info && (
+          <details className="group">
+            <summary className="px-5 py-3 cursor-pointer select-none flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900">
+              <span className="text-gray-400 group-open:rotate-90 transition-transform">▸</span>
+              训练信息
+            </summary>
+            <div className="px-5 pb-4">
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="rounded-lg border border-gray-100 bg-gray-50 p-2.5">
+                  <span className="text-gray-400">算法</span>
+                  <strong className="block text-gray-900 mt-0.5">{String(rec.training_info.algorithm ?? "-")}</strong>
+                </div>
+                <div className="rounded-lg border border-gray-100 bg-gray-50 p-2.5">
+                  <span className="text-gray-400">训练样本数</span>
+                  <strong className="block text-gray-900 mt-0.5">{String(rec.training_info.training_samples ?? "-")}</strong>
+                </div>
+                <div className="rounded-lg border border-gray-100 bg-gray-50 p-2.5">
+                  <span className="text-gray-400">训练耗时</span>
+                  <strong className="block text-gray-900 mt-0.5">{String(rec.training_info.training_time_ms ?? "-")} ms</strong>
+                </div>
+                {rec.training_info.feature_count != null && (
+                  <div className="rounded-lg border border-gray-100 bg-gray-50 p-2.5">
+                    <span className="text-gray-400">特征数量</span>
+                    <strong className="block text-gray-900 mt-0.5">{String(rec.training_info.feature_count)}</strong>
+                  </div>
+                )}
+              </div>
+            </div>
+          </details>
+        )}
 
         <details className="group">
           <summary className="px-5 py-3 cursor-pointer select-none flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900">
