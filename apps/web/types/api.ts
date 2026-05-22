@@ -38,6 +38,7 @@ export type Recommendation = {
   rank: number;
   generation_method: string;
   model_name: string | null;
+  algorithm: string | null;
   parameters: Record<string, number>;
   intermediate_metrics: Record<string, number>;
   predicted_quality: Record<string, number>;
@@ -46,6 +47,9 @@ export type Recommendation = {
   rationale: string;
   material_explanation: string;
   similar_cases: CaseMatch[];
+  feature_importance: Record<string, number> | null;
+  error_metrics: Record<string, Record<string, number>> | null;
+  training_info: Record<string, unknown> | null;
 };
 
 export type RecommendationResponse = {
