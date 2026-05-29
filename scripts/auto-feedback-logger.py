@@ -285,6 +285,9 @@ def generate_log(
 # File output
 # ---------------------------------------------------------------------------
 def save_log(content: str, material: str) -> Path:
+    # Guard against path traversal (material must be a known safe value)
+    if material not in MATERIAL_PARAMS:
+        raise ValueError(f"Unknown material: {material}")
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     today = date.today().strftime("%Y %m %d")
