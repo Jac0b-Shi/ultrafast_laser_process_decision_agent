@@ -13,6 +13,7 @@ from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 
 from app.schemas import CaseMatch, ModelInfo, ParameterRecommendation, RecommendationRequest, RecommendationResponse
@@ -38,7 +39,7 @@ MODEL_FEATURE_COLUMNS = PARAMETER_COLUMNS + [
 MODEL_INFO = ModelInfo(
     model_name="range_guarded_random_forest_regressor",
     model_version="0.4.0",
-    model_type="材料定制中间量 + 规则范围守卫 + 相似案例筛选 + RandomForestRegressor 回归拟合",
+    model_type="材料定制中间量 + 规则范围守卫 + 相似案例筛选 + 多算法回归拟合 (RandomForest / MLP / GBDT / Linear / SVR)",
     training_scope=(
         "每次请求先按材料和约束筛选历史样本，再按材料构造脉冲密度、剂量指数、"
         "功率链代理或经验交互项等中间量；回归模型使用适用原始参数和中间量拟合参数到质量指标的关系，"
@@ -58,40 +59,30 @@ ALGORITHM_REGRESSORS: dict[str, dict[str, Any]] = {
         "kwargs": {"n_estimators": 160, "min_samples_leaf": 2, "random_state": RANDOM_STATE},
         "label": "随机森林",
         "label_en": "RandomForestRegressor",
-        "has_feature_importance": True,
-        "has_estimators": True,
     },
     "neural_network": {
         "cls": MLPRegressor,
         "kwargs": {"hidden_layer_sizes": (100, 50), "max_iter": 2000, "random_state": RANDOM_STATE, "early_stopping": True},
         "label": "神经网络",
         "label_en": "MLPRegressor",
-        "has_feature_importance": False,
-        "has_estimators": False,
     },
     "gradient_boosting": {
         "cls": GradientBoostingRegressor,
         "kwargs": {"n_estimators": 100, "max_depth": 4, "random_state": RANDOM_STATE},
         "label": "梯度提升",
         "label_en": "GradientBoostingRegressor",
-        "has_feature_importance": True,
-        "has_estimators": True,
     },
     "linear_regression": {
         "cls": LinearRegression,
         "kwargs": {},
         "label": "线性回归",
         "label_en": "LinearRegression",
-        "has_feature_importance": False,
-        "has_estimators": False,
     },
     "svr": {
         "cls": SVR,
         "kwargs": {"kernel": "rbf"},
         "label": "支持向量机",
         "label_en": "SVR",
-        "has_feature_importance": False,
-        "has_estimators": False,
     },
 }
 
@@ -551,6 +542,7 @@ def _fit_regression_models(
         model = Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
                 ("regressor", regressor),
             ]
         )
@@ -568,6 +560,7 @@ def _fit_regression_models(
                     cv_model = Pipeline(
                         steps=[
                             ("imputer", SimpleImputer(strategy="median")),
+                            ("scaler", StandardScaler()),
                             ("regressor", cv_regressor),
                         ]
                     )
@@ -714,7 +707,6 @@ def _ml_recommendations(
     algorithm = getattr(request, "algorithm", "random_forest") or "random_forest"
     algo = ALGORITHM_REGRESSORS.get(algorithm, ALGORITHM_REGRESSORS["random_forest"])
     algo_label = algo["label"]
-    algo_label_en = algo["label_en"]
 
     if not feature_columns:
         return [], ["可用参数列不足，已回退到历史相似案例推荐。"]
@@ -727,10 +719,10 @@ def _ml_recommendations(
     if skipped:
         notes.append(f"以下质量指标样本不足，未训练回归模型：{', '.join(skipped)}。")
 
+    training_info["feature_count"] = len(feature_columns)
+
     # feature importance
     feature_importance = _extract_feature_importance(models, feature_columns)
-    if feature_importance:
-        training_info["feature_count"] = len(feature_importance)
 
     generated = _generate_regression_candidates(frame, feature_columns, scored_rows, request)
     if generated.empty:
