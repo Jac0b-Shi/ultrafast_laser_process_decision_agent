@@ -9,6 +9,8 @@ import pandas as pd
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score
+from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.svm import SVR
@@ -532,19 +534,20 @@ def _fit_regression_models(
 ) -> tuple[dict[str, Pipeline], list[str], dict[str, Any]]:
     models: dict[str, Pipeline] = {}
     skipped: list[str] = []
+    cv_r2_scores: dict[str, float] = {}
     feature_ready = frame[feature_columns].notna().any(axis=1)
-    total_samples = 0
+    total_samples: int | None = None
     t_start = time.perf_counter()
 
     algo = ALGORITHM_REGRESSORS.get(algorithm, ALGORITHM_REGRESSORS["random_forest"])
-    regressor = algo["cls"](**algo["kwargs"])
 
     for target in target_columns:
         train = frame[feature_ready & frame[target].notna()]
         if len(train) < MIN_REGRESSION_SAMPLES:
             skipped.append(target)
             continue
-        total_samples = max(total_samples, int(len(train)))
+        total_samples = max(total_samples or 0, int(len(train)))
+        regressor = algo["cls"](**algo["kwargs"])
         model = Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="median")),
@@ -554,6 +557,26 @@ def _fit_regression_models(
         model.fit(train[feature_columns], train[target])
         models[target] = model
 
+        # holdout R² on a subset for a rough generalization estimate
+        if len(train) >= 10:
+            try:
+                train_sub, test_sub = train_test_split(
+                    train, test_size=0.2, random_state=RANDOM_STATE,
+                )
+                if len(test_sub) >= 2:
+                    cv_regressor = algo["cls"](**algo["kwargs"])
+                    cv_model = Pipeline(
+                        steps=[
+                            ("imputer", SimpleImputer(strategy="median")),
+                            ("regressor", cv_regressor),
+                        ]
+                    )
+                    cv_model.fit(train_sub[feature_columns], train_sub[target])
+                    y_pred = cv_model.predict(test_sub[feature_columns])
+                    cv_r2_scores[target] = round(float(r2_score(test_sub[target], y_pred)), 4)
+            except Exception:
+                pass
+
     t_end = time.perf_counter()
     training_info: dict[str, Any] = {
         "algorithm": algo["label"],
@@ -561,6 +584,10 @@ def _fit_regression_models(
         "training_samples": total_samples,
         "training_time_ms": round((t_end - t_start) * 1000, 2),
     }
+    if cv_r2_scores:
+        training_info["holdout_r2"] = cv_r2_scores
+        r2_values = list(cv_r2_scores.values())
+        training_info["holdout_r2_mean"] = round(sum(r2_values) / len(r2_values), 4)
     return models, skipped, training_info
 
 
@@ -736,7 +763,7 @@ def _ml_recommendations(
                     # MAE against historical mean as proxy
                     mean_actual = float(actuals.mean())
                     error_metrics[target] = {
-                        "mae_vs_mean": round(abs(pred_val - mean_actual), 4),
+                        "deviation_from_historical_mean": round(abs(pred_val - mean_actual), 4),
                         "predicted": round(pred_val, 4),
                         "historical_mean": round(mean_actual, 4),
                         "historical_std": round(float(actuals.std()), 4) if len(actuals) > 1 else 0.0,

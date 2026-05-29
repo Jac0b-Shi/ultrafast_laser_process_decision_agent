@@ -274,8 +274,8 @@ export function RecommendationCard({ recommendation: rec, isSelected, onSelect }
                         <strong className="block text-gray-900">{formatValue(metrics.historical_std)}</strong>
                       </div>
                       <div>
-                        <span className="text-gray-400">MAE vs 均值</span>
-                        <strong className="block text-gray-900">{formatValue(metrics.mae_vs_mean)}</strong>
+                        <span className="text-gray-400">偏离历史均值</span>
+                        <strong className="block text-gray-900">{formatValue(metrics.deviation_from_historical_mean)}</strong>
                       </div>
                     </div>
                   </div>
@@ -309,6 +309,12 @@ export function RecommendationCard({ recommendation: rec, isSelected, onSelect }
                   <div className="rounded-lg border border-gray-100 bg-gray-50 p-2.5">
                     <span className="text-gray-400">特征数量</span>
                     <strong className="block text-gray-900 mt-0.5">{String(rec.training_info.feature_count)}</strong>
+                  </div>
+                )}
+                {rec.training_info.holdout_r2_mean != null && (
+                  <div className="rounded-lg border border-gray-100 bg-gray-50 p-2.5">
+                    <span className="text-gray-400">Holdout R² (均值)</span>
+                    <strong className="block text-gray-900 mt-0.5">{Number(rec.training_info.holdout_r2_mean).toFixed(4)}</strong>
                   </div>
                 )}
               </div>
