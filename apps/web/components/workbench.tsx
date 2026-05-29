@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { toNumber } from "@/lib/utils";
+import { useQueryHistory } from "@/lib/use-query-history";
 import type { DatasetSummary, ModelInfo, RecommendationResponse } from "@/types/api";
+import type { HistoryEntry } from "@/lib/use-query-history";
 
 import { TopBar } from "./top-bar";
 import { TaskInput } from "./task-input";
@@ -40,6 +42,8 @@ export function Workbench() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("results");
+
+  const { history, addEntry, removeEntry, clearHistory } = useQueryHistory();
 
   async function loadSummary() {
     setError("");
@@ -107,6 +111,8 @@ export function Workbench() {
         setSelectedRank(payload.recommendations[0].rank);
       }
       setActiveTab("results");
+      // save to history
+      addEntry(form, payload);
     } catch (err) {
       setError(err instanceof Error ? err.message : "推荐请求失败");
     } finally {
@@ -144,6 +150,15 @@ export function Workbench() {
     } finally {
       setFeedbackLoading(false);
     }
+  }
+
+  function restoreFromHistory(entry: HistoryEntry) {
+    setForm(entry.query);
+    setResult(null);
+    setSelectedRank(null);
+    setMessage("");
+    setError("");
+    setActiveTab("results");
   }
 
   return (
@@ -189,6 +204,10 @@ export function Workbench() {
               activeTab={activeTab}
               onTabChange={setActiveTab}
               resultCount={result?.recommendations.length ?? 0}
+              history={history}
+              onRestoreHistory={restoreFromHistory}
+              onRemoveHistory={removeEntry}
+              onClearHistory={clearHistory}
             />
 
             {activeTab === "results" && result && result.recommendations.length > 0 && (
