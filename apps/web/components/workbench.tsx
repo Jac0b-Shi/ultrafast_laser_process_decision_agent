@@ -7,7 +7,6 @@ import { useQueryHistory } from "@/lib/use-query-history";
 import type { DatasetSummary, ModelInfo, RecommendationResponse } from "@/types/api";
 import type { HistoryEntry } from "@/lib/use-query-history";
 
-import { TopBar } from "./top-bar";
 import { TaskInput } from "./task-input";
 import { InfoPanels } from "./info-panels";
 import { RecommendationCard } from "./recommendation-card";
@@ -41,7 +40,15 @@ const initialForm: FormState = {
   notes: "",
 };
 
-export function Workbench() {
+export function Workbench({
+  summary: initialSummary,
+  modelInfo: initialModelInfo,
+  onRefresh,
+}: {
+  summary: DatasetSummary | null;
+  modelInfo: ModelInfo | null;
+  onRefresh: () => void;
+}) {
   const [summary, setSummary] = useState<DatasetSummary | null>(null);
   const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
@@ -57,23 +64,19 @@ export function Workbench() {
 
   const { history, addEntry, removeEntry, clearHistory } = useQueryHistory();
 
-  async function loadSummary() {
-    setError("");
-    const [payload, model] = await Promise.all([
-      apiFetch<DatasetSummary>("/api/datasets/summary"),
-      apiFetch<ModelInfo>("/api/recommendations/model-info"),
-    ]);
-    setSummary(payload);
-    setModelInfo(model);
-    if (!form.material && payload.materials.length > 0) {
-      setForm((c) => ({ ...c, material: payload.materials[0].material }));
-    }
-  }
+  useEffect(() => {
+    if (initialSummary) setSummary(initialSummary);
+    if (initialModelInfo) setModelInfo(initialModelInfo);
+  }, [initialSummary, initialModelInfo]);
 
   useEffect(() => {
-    loadSummary().catch((err: unknown) =>
-      setError(err instanceof Error ? err.message : "数据概览加载失败")
-    );
+    if (!form.material && summary?.materials && summary.materials.length > 0) {
+      setForm((c) => ({ ...c, material: summary.materials[0].material }));
+    }
+  }, [summary]);
+
+  useEffect(() => {
+    onRefresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -181,7 +184,7 @@ export function Workbench() {
         }),
       });
       setMessage("反馈已追加写入，刷新后会进入后续推荐候选集。");
-      await loadSummary();
+      onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "反馈写入失败");
     } finally {
@@ -200,7 +203,6 @@ export function Workbench() {
 
   return (
     <div className="min-h-screen bg-[#f7f8f5]">
-      <TopBar summary={summary} modelInfo={modelInfo} onRefresh={() => { loadSummary().catch(() => {}); }} />
 
       <div className="max-w-[1440px] mx-auto px-5 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(340px,400px)_1fr] gap-6">
