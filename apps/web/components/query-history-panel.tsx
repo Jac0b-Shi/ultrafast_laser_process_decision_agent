@@ -123,16 +123,16 @@ export function QueryHistoryPanel({ history, onRestore, onRemove, onClear }: Pro
                   <button
                     onClick={() => onRemove(entry.id)}
                     className="p-1 rounded text-gray-300 hover:text-red-400 transition-colors"
-                    title="删除此记录"
+                    aria-label="删除此记录"
                   >
-                    <Trash2 size={11} />
+                    <Trash2 size={11} aria-hidden="true" />
                   </button>
                   <button
                     onClick={() => onRestore(entry)}
                     className="flex items-center gap-0.5 px-2 py-1 rounded bg-primary text-white text-[11px] font-medium hover:bg-primary-800 transition-colors"
-                    title="恢复此查询"
+                    aria-label="恢复此查询"
                   >
-                    <RotateCcw size={10} />
+                    <RotateCcw size={10} aria-hidden="true" />
                     恢复
                   </button>
                 </div>
@@ -140,9 +140,9 @@ export function QueryHistoryPanel({ history, onRestore, onRemove, onClear }: Pro
 
               {/* warning notes from result */}
               {entry.result.notes.length > 0 && (
-                <details className="mt-2">
+                <details className="mt-2 group">
                   <summary className="flex items-center gap-1 text-[11px] text-amber-600 cursor-pointer select-none">
-                    <ChevronRight size={10} className="transition-transform [[open]_&]:rotate-90" />
+                    <ChevronRight size={10} className="transition-transform group-open:rotate-90" />
                     {entry.result.notes.length} 条提示
                   </summary>
                   <ul className="mt-1 space-y-0.5 pl-3">
