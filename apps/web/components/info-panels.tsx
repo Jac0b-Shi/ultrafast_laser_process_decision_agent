@@ -1,8 +1,10 @@
 "use client";
 
-import { Cpu, Database, BarChart3 } from "lucide-react";
+import { Cpu, Database, BarChart3, History } from "lucide-react";
 import { metricLabel } from "@/lib/metric-display";
 import type { DatasetSummary, ModelInfo } from "@/types/api";
+import type { HistoryEntry } from "@/lib/use-query-history";
+import { QueryHistoryPanel } from "./query-history-panel";
 
 type Props = {
   summary: DatasetSummary | null;
@@ -10,15 +12,30 @@ type Props = {
   activeTab: string;
   onTabChange: (tab: string) => void;
   resultCount: number;
+  history: HistoryEntry[];
+  onRestoreHistory: (entry: HistoryEntry) => void;
+  onRemoveHistory: (id: string) => void;
+  onClearHistory: () => void;
 };
 
 const TABS = [
   { id: "results", label: "推荐结果" },
+  { id: "history", label: "历史记录" },
   { id: "data", label: "数据概览" },
   { id: "model", label: "模型信息" },
 ];
 
-export function InfoPanels({ summary, modelInfo, activeTab, onTabChange, resultCount }: Props) {
+export function InfoPanels({
+  summary,
+  modelInfo,
+  activeTab,
+  onTabChange,
+  resultCount,
+  history,
+  onRestoreHistory,
+  onRemoveHistory,
+  onClearHistory,
+}: Props) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       {/* tabs */}
@@ -37,6 +54,11 @@ export function InfoPanels({ summary, modelInfo, activeTab, onTabChange, resultC
             {tab.id === "results" && resultCount > 0 && (
               <span className="ml-1.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-white text-xs">
                 {resultCount}
+              </span>
+            )}
+            {tab.id === "history" && history.length > 0 && (
+              <span className="ml-1.5 inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-gray-100 text-gray-600 text-xs">
+                {history.length}
               </span>
             )}
             {activeTab === tab.id && (
@@ -114,6 +136,15 @@ export function InfoPanels({ summary, modelInfo, activeTab, onTabChange, resultC
             <p className="text-sm text-gray-500">尚未生成推荐</p>
             <p className="text-xs text-gray-400 mt-1">在左侧填写任务目标后点击"生成推荐"</p>
           </div>
+        )}
+
+        {activeTab === "history" && (
+          <QueryHistoryPanel
+            history={history}
+            onRestore={onRestoreHistory}
+            onRemove={onRemoveHistory}
+            onClear={onClearHistory}
+          />
         )}
       </div>
     </div>
