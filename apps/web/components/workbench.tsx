@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { toNumber } from "@/lib/utils";
 import { useQueryHistory } from "@/lib/use-query-history";
@@ -19,7 +19,16 @@ type FormState = {
   targetDiameter: string;
   maxRoughness: string;
   topK: string;
+  algorithm: string;
   notes: string;
+};
+
+const ALGORITHM_LABELS: Record<string, string> = {
+  random_forest: "随机森林",
+  neural_network: "神经网络",
+  gradient_boosting: "梯度提升",
+  linear_regression: "线性回归",
+  svr: "支持向量机",
 };
 
 const initialForm: FormState = {
@@ -28,6 +37,7 @@ const initialForm: FormState = {
   targetDiameter: "",
   maxRoughness: "",
   topK: "3",
+  algorithm: "random_forest",
   notes: "",
 };
 
@@ -36,12 +46,14 @@ export function Workbench() {
   const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
   const [result, setResult] = useState<RecommendationResponse | null>(null);
+  const [algoResults, setAlgoResults] = useState<Map<string, RecommendationResponse>>(new Map());
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("results");
+  const abortRef = useRef<AbortController | null>(null);
 
   const { history, addEntry, removeEntry, clearHistory } = useQueryHistory();
 
@@ -89,20 +101,35 @@ export function Workbench() {
     setForm((c) => ({ ...c, [field]: value }));
   }
 
-  async function submitRecommendation() {
+  function handleAlgorithmChange(algorithm: string) {
+    if (result && !loading) {
+      submitRecommendation(algorithm);
+    }
+  }
+
+  async function submitRecommendation(algorithmOverride?: string) {
+    const algorithm = algorithmOverride ?? form.algorithm ?? "random_forest";
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setError("");
     setMessage("");
-    setSelectedRank(null);
+    if (!algorithmOverride) {
+      setSelectedRank(null);
+    }
     try {
       const payload = await apiFetch<RecommendationResponse>("/api/recommendations", {
         method: "POST",
+        signal: controller.signal,
         body: JSON.stringify({
           material: form.material || null,
           target_depth_um: toNumber(form.targetDepth),
           target_diameter_um: toNumber(form.targetDiameter),
           max_roughness_um: toNumber(form.maxRoughness),
           top_k: Number(form.topK) || 3,
+          algorithm,
           constraints: {},
         }),
       });
@@ -110,13 +137,22 @@ export function Workbench() {
       if (payload.recommendations[0]) {
         setSelectedRank(payload.recommendations[0].rank);
       }
+      setAlgoResults((prev) => {
+        const next = new Map(prev);
+        next.set(algorithm, payload);
+        return next;
+      });
       setActiveTab("results");
       // save to history
       addEntry(form, payload);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "推荐请求失败");
     } finally {
-      setLoading(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setLoading(false);
+      }
     }
   }
 
@@ -134,6 +170,7 @@ export function Workbench() {
             target_depth_um: toNumber(form.targetDepth),
             target_diameter_um: toNumber(form.targetDiameter),
             max_roughness_um: toNumber(form.maxRoughness),
+            algorithm: form.algorithm || "random_forest",
             constraints: {},
             top_k: Number(form.topK) || 3,
           },
@@ -176,6 +213,7 @@ export function Workbench() {
                 targetDiameter: form.targetDiameter,
                 maxRoughness: form.maxRoughness,
                 topK: form.topK,
+                algorithm: form.algorithm,
               }}
               materials={summary?.materials ?? []}
               diameterAvailable={diameterAvailable}
@@ -185,6 +223,7 @@ export function Workbench() {
               onChangeMaterial={updateMaterial}
               onChangeField={updateField}
               onSubmit={submitRecommendation}
+              onAlgorithmChange={handleAlgorithmChange}
             />
             <FeedbackForm
               result={result}
@@ -229,6 +268,49 @@ export function Workbench() {
                     onSelect={() => setSelectedRank(rec.rank)}
                   />
                 ))}
+
+                {/* algorithm comparison — show other algorithms' results */}
+                {algoResults.size > 1 && (
+                  <div className="mt-6">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                      <span className="w-1 h-4 bg-primary rounded-full" />
+                      算法结果对比 ({algoResults.size} 个算法)
+                    </h3>
+                    <div className="space-y-3">
+                      {Array.from(algoResults.entries())
+                        .filter(([key]) => key !== (form.algorithm || "random_forest"))
+                        .map(([key, algoResult]) => (
+                          <details key={key} className="group border border-gray-200 rounded-xl bg-white overflow-hidden">
+                            <summary className="px-4 py-3 cursor-pointer select-none flex items-center justify-between gap-3 hover:bg-gray-50">
+                              <span className="text-sm font-medium text-gray-700">
+                                {ALGORITHM_LABELS[key] || key}
+                              </span>
+                              <div className="flex items-center gap-3 text-xs text-gray-400">
+                                {algoResult.recommendations[0] && (
+                                  <span className="font-mono">
+                                    得分 {algoResult.recommendations[0].score.toFixed(4)}
+                                  </span>
+                                )}
+                                <span className="text-gray-400 group-open:rotate-90 transition-transform">▸</span>
+                              </div>
+                            </summary>
+                            <div className="px-4 pb-4">
+                              {algoResult.recommendations.map((rec) => (
+                                <div key={`${key}-${rec.rank}`} className="mt-2">
+                                  <RecommendationCard
+                                    key={`${key}-${rec.rank}`}
+                                    recommendation={rec}
+                                    isSelected={false}
+                                    onSelect={() => {}}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
