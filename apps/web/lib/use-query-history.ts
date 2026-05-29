@@ -16,6 +16,7 @@ export type HistoryEntry = {
     maxRoughness: string;
     topK: string;
     notes: string;
+    algorithm?: string;
   };
   result: {
     datasetSize: number;
