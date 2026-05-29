@@ -31,10 +31,14 @@ data/interim/*
 !data/interim/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
+data/feedback/*
+!data/feedback/.gitkeep
 experiments/runs/*
 !experiments/runs/.gitkeep
 experiments/feedback_logs/*
 !experiments/feedback_logs/.gitkeep
+experiments/实验数据反馈日志/*
+!experiments/实验数据反馈日志/.gitkeep
 
 # OS / editor
 .DS_Store
