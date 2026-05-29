@@ -79,8 +79,8 @@ MATERIALS = {
             6: "depth_1_um", 7: "depth_2_um", 8: "depth_3_um",
             9: "depth_um", 10: "roughness_um",
         },
-        "backfill_target": 9,
-        "backfill_sources": [6, 7, 8],
+        "backfill_target": "depth_um",
+        "backfill_sources": ["depth_1_um", "depth_2_um", "depth_3_um"],
     },
     "高温合金数据集.xlsx": {
         "material": "superalloy",
@@ -253,15 +253,15 @@ def clean_one_file(filepath, config, report):
 
     # Backfill depth_um from individual measurements (diamond dataset)
     if "backfill_target" in config and "backfill_sources" in config:
-        depth_col_name = config["rename_map"].get(config["backfill_target"], df.columns[config["backfill_target"]])
-        src_indices = config["backfill_sources"]
-        src_names = [df.columns[i] if i < len(df.columns) else None for i in src_indices]
+        depth_col_name = config["backfill_target"]  # now a column name, e.g. "depth_um"
+        src_names = config["backfill_sources"]       # now column names, e.g. ["depth_1_um", ...]
         filled = 0
-        for idx in df[df[depth_col_name].isnull()].index:
-            vals = df.loc[idx, src_names].dropna().values if all(n in df.columns for n in src_names) else []
-            if len(vals) > 0:
-                df.loc[idx, depth_col_name] = vals.mean()
-                filled += 1
+        if depth_col_name in df.columns and all(n in df.columns for n in src_names):
+            for idx in df[df[depth_col_name].isnull()].index:
+                vals = df.loc[idx, src_names].dropna().values
+                if len(vals) > 0:
+                    df.loc[idx, depth_col_name] = vals.mean()
+                    filled += 1
         if filled > 0:
             report["files"][filename]["depth_backfilled"] = filled
             print(f"  [FILL] Backfilled {filled} depth_um from individual measurements")

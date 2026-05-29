@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { toNumber } from "@/lib/utils";
 import { useQueryHistory } from "@/lib/use-query-history";
@@ -41,16 +41,14 @@ const initialForm: FormState = {
 };
 
 export function Workbench({
-  summary: initialSummary,
-  modelInfo: initialModelInfo,
+  summary,
+  modelInfo,
   onRefresh,
 }: {
   summary: DatasetSummary | null;
   modelInfo: ModelInfo | null;
   onRefresh: () => void;
 }) {
-  const [summary, setSummary] = useState<DatasetSummary | null>(null);
-  const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
   const [result, setResult] = useState<RecommendationResponse | null>(null);
   const [algoResults, setAlgoResults] = useState<Map<string, RecommendationResponse>>(new Map());
@@ -61,24 +59,15 @@ export function Workbench({
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("results");
   const abortRef = useRef<AbortController | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { history, addEntry, removeEntry, clearHistory } = useQueryHistory();
-
-  useEffect(() => {
-    if (initialSummary) setSummary(initialSummary);
-    if (initialModelInfo) setModelInfo(initialModelInfo);
-  }, [initialSummary, initialModelInfo]);
 
   useEffect(() => {
     if (!form.material && summary?.materials && summary.materials.length > 0) {
       setForm((c) => ({ ...c, material: summary.materials[0].material }));
     }
   }, [summary]);
-
-  useEffect(() => {
-    onRefresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const selectedRecommendation = useMemo(() => {
     if (!result || selectedRank === null) return null;
@@ -106,7 +95,11 @@ export function Workbench({
 
   function handleAlgorithmChange(algorithm: string) {
     if (result && !loading) {
-      submitRecommendation(algorithm);
+      // debounce: 300ms 内重复点击只执行最后一次
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        submitRecommendation(algorithm);
+      }, 300);
     }
   }
 
