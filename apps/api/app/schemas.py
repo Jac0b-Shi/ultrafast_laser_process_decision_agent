@@ -28,7 +28,6 @@ class RecommendationRequest(BaseModel):
     max_roughness_um: float | None = None
     constraints: dict[str, Any] = Field(default_factory=dict)
     top_k: int = Field(default=3, ge=1, le=10)
-    algorithm: str = Field(default="random_forest", description="回归算法: random_forest | neural_network | gradient_boosting | linear_regression | svr")
 
 
 class CaseMatch(BaseModel):
@@ -56,7 +55,6 @@ class ParameterRecommendation(BaseModel):
     rank: int
     generation_method: str
     model_name: str | None = None
-    algorithm: str | None = None
     parameters: dict[str, float]
     intermediate_metrics: dict[str, float]
     predicted_quality: dict[str, float]
@@ -65,9 +63,6 @@ class ParameterRecommendation(BaseModel):
     rationale: str
     material_explanation: str
     similar_cases: list[CaseMatch]
-    feature_importance: dict[str, float] | None = None
-    error_metrics: dict[str, dict[str, float]] | None = None
-    training_info: dict[str, Any] | None = None
 
 
 class RecommendationResponse(BaseModel):
@@ -91,3 +86,41 @@ class FeedbackReceipt(BaseModel):
     created_at: datetime
     stored_jsonl: str
     stored_sqlite: str
+
+
+# 数据管理相关模型
+class ExperimentData(BaseModel):
+    case_id: str | None = None
+    material: str
+    pulse_width_fs: float | None = None
+    repetition_frequency_khz: float | None = None
+    scan_speed_mm_s: float | None = None
+    pulse_energy_mj: float | None = None
+    laser_energy_percent: float | None = None
+    defocus_amount_mm: float | None = None
+    marking_count: float | None = None
+    fill_spacing_um: float | None = None
+    scan_interval_um: float | None = None
+    processing_time_s: float | None = None
+    average_power_w: float | None = None
+    peak_power_kw: float | None = None
+    depth_um: float | None = None
+    diameter_um: float | None = None
+    roughness_um: float | None = None
+    is_active: bool = True
+    data_source: str = "user"
+    note: str | None = None
+
+
+class MaterialInfo(BaseModel):
+    material: str
+    display_name: str | None = None
+    description: str | None = None
+
+
+class MaterialListResponse(BaseModel):
+    materials: list[str]
+
+
+class ExperimentDataListResponse(BaseModel):
+    records: list[ExperimentData]
