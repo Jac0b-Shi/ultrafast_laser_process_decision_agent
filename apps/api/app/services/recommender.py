@@ -526,6 +526,7 @@ def _fit_regression_models(
     models: dict[str, Pipeline] = {}
     skipped: list[str] = []
     cv_r2_scores: dict[str, float] = {}
+    residual_std: dict[str, float] = {}
     feature_ready = frame[feature_columns].notna().any(axis=1)
     total_samples: int | None = None
     t_start = time.perf_counter()
@@ -548,6 +549,10 @@ def _fit_regression_models(
         )
         model.fit(train[feature_columns], train[target])
         models[target] = model
+
+        # Compute training residual std for non-ensemble uncertainty fallback
+        y_train_pred = model.predict(train[feature_columns])
+        residual_std[target] = round(float(np.std(train[target].values - y_train_pred)), 4)
 
         # holdout R² on a subset for a rough generalization estimate
         if len(train) >= 10:
@@ -581,7 +586,7 @@ def _fit_regression_models(
         training_info["holdout_r2"] = cv_r2_scores
         r2_values = list(cv_r2_scores.values())
         training_info["holdout_r2_mean"] = round(sum(r2_values) / len(r2_values), 4)
-    return models, skipped, training_info
+    return models, skipped, training_info, residual_std
 
 
 def _filled_feature_row(row: pd.Series, columns: list[str], medians: pd.Series) -> dict[str, float]:
@@ -655,6 +660,7 @@ def _predict_quality_and_uncertainty(
     models: dict[str, Pipeline],
     feature_columns: list[str],
     feature_row: pd.Series,
+    train_residual_std: dict[str, float] | None = None,
 ) -> tuple[dict[str, float], dict[str, float]]:
     input_frame = pd.DataFrame([feature_row[feature_columns].to_dict()], columns=feature_columns)
     predicted: dict[str, float] = {}
@@ -669,7 +675,9 @@ def _predict_quality_and_uncertainty(
             tree_predictions = [float(tree.predict(transformed)[0]) for tree in regressor.estimators_]
             uncertainty[target] = round(float(np.std(tree_predictions)), 4)
         except AttributeError:
-            uncertainty[target] = 0.0
+            # Non-ensemble models: fall back to training residual std
+            fallback = (train_residual_std or {}).get(target, 0.0)
+            uncertainty[target] = round(fallback, 4)
 
     return predicted, uncertainty
 
@@ -713,7 +721,7 @@ def _ml_recommendations(
     if not target_columns:
         return [], ["可用质量指标样本不足，已回退到历史相似案例推荐。"]
 
-    models, skipped, training_info = _fit_regression_models(frame, feature_columns, target_columns, algorithm)
+    models, skipped, training_info, residual_std = _fit_regression_models(frame, feature_columns, target_columns, algorithm)
     if not models:
         return [], ["回归模型训练样本不足，已回退到历史相似案例推荐。"]
     if skipped:
@@ -732,7 +740,7 @@ def _ml_recommendations(
     for _, feature_row in generated.iterrows():
         if any(column not in feature_row or not _finite(feature_row.get(column)) for column in feature_columns):
             continue
-        predicted, uncertainty = _predict_quality_and_uncertainty(models, feature_columns, feature_row)
+        predicted, uncertainty = _predict_quality_and_uncertainty(models, feature_columns, feature_row, residual_std)
         if not predicted:
             continue
         raw_score = _score_quality(predicted, frame, request)

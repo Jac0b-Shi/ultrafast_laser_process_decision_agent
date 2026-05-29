@@ -103,7 +103,7 @@ class ExperimentData(BaseModel):
     pulse_energy_mj: float | None = Field(default=None, ge=0, le=1000)
     laser_energy_percent: float | None = Field(default=None, ge=0, le=100)
     defocus_amount_mm: float | None = Field(default=None, ge=-100, le=100)
-    marking_count: float | None = Field(default=None, ge=0, le=1000)
+    marking_count: int | None = Field(default=None, ge=0, le=1000)
     fill_spacing_um: float | None = Field(default=None, ge=0, le=10000)
     scan_interval_um: float | None = Field(default=None, ge=0, le=100000)
     processing_time_s: float | None = Field(default=None, ge=0, le=360000)

@@ -70,7 +70,7 @@ export type ExperimentData = {
   pulse_energy_mj: number | null;
   laser_energy_percent: number | null;
   defocus_amount_mm: number | null;
-  marking_count: number | null;
+  marking_count: number | null;  // int on backend
   fill_spacing_um: number | null;
   scan_interval_um: number | null;
   processing_time_s: number | null;
