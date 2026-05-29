@@ -49,7 +49,7 @@ export type Recommendation = {
   similar_cases: CaseMatch[];
   feature_importance: Record<string, number> | null;
   error_metrics: Record<string, Record<string, number>> | null;
-  training_info: Record<string, unknown> | null;
+  training_info: Record<string, string | number> | null;
 };
 
 export type RecommendationResponse = {
@@ -58,4 +58,36 @@ export type RecommendationResponse = {
   model_info: ModelInfo;
   recommendations: Recommendation[];
   notes: string[];
+};
+
+// 数据管理相关类型
+export type ExperimentData = {
+  case_id: string | null;
+  material: string;
+  pulse_width_fs: number | null;
+  repetition_frequency_khz: number | null;
+  scan_speed_mm_s: number | null;
+  pulse_energy_mj: number | null;
+  laser_energy_percent: number | null;
+  defocus_amount_mm: number | null;
+  marking_count: number | null;  // int on backend
+  fill_spacing_um: number | null;
+  scan_interval_um: number | null;
+  processing_time_s: number | null;
+  average_power_w: number | null;
+  peak_power_kw: number | null;
+  depth_um: number | null;
+  diameter_um: number | null;
+  roughness_um: number | null;
+  is_active: boolean;
+  data_source: string;
+  note: string | null;
+};
+
+export type MaterialListResponse = {
+  materials: string[];
+};
+
+export type ExperimentDataListResponse = {
+  records: ExperimentData[];
 };

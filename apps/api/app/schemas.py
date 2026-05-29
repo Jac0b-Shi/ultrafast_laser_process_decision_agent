@@ -28,7 +28,7 @@ class RecommendationRequest(BaseModel):
     max_roughness_um: float | None = None
     constraints: dict[str, Any] = Field(default_factory=dict)
     top_k: int = Field(default=3, ge=1, le=10)
-    algorithm: str = Field(default="random_forest", description="回归算法: random_forest | neural_network | gradient_boosting | linear_regression | svr")
+    algorithm: str = Field(default="random_forest")
 
 
 class CaseMatch(BaseModel):
@@ -66,7 +66,7 @@ class ParameterRecommendation(BaseModel):
     material_explanation: str
     similar_cases: list[CaseMatch]
     feature_importance: dict[str, float] | None = None
-    error_metrics: dict[str, dict[str, float]] | None = None
+    error_metrics: dict[str, Any] | None = None
     training_info: dict[str, Any] | None = None
 
 
@@ -91,3 +91,41 @@ class FeedbackReceipt(BaseModel):
     created_at: datetime
     stored_jsonl: str
     stored_sqlite: str
+
+
+# 数据管理相关模型
+class ExperimentData(BaseModel):
+    case_id: str | None = None
+    material: str
+    pulse_width_fs: float | None = Field(default=None, ge=0, le=10000)
+    repetition_frequency_khz: float | None = Field(default=None, ge=0, le=100000)
+    scan_speed_mm_s: float | None = Field(default=None, ge=0, le=100000)
+    pulse_energy_mj: float | None = Field(default=None, ge=0, le=1000)
+    laser_energy_percent: float | None = Field(default=None, ge=0, le=100)
+    defocus_amount_mm: float | None = Field(default=None, ge=-100, le=100)
+    marking_count: int | None = Field(default=None, ge=0, le=1000)
+    fill_spacing_um: float | None = Field(default=None, ge=0, le=10000)
+    scan_interval_um: float | None = Field(default=None, ge=0, le=100000)
+    processing_time_s: float | None = Field(default=None, ge=0, le=360000)
+    average_power_w: float | None = Field(default=None, ge=0, le=100000)
+    peak_power_kw: float | None = Field(default=None, ge=0, le=1000000)
+    depth_um: float | None = Field(default=None, ge=0, le=100000)
+    diameter_um: float | None = Field(default=None, ge=0, le=100000)
+    roughness_um: float | None = Field(default=None, ge=0, le=1000)
+    is_active: bool = True
+    data_source: str = "user"
+    note: str | None = None
+
+
+class MaterialInfo(BaseModel):
+    material: str
+    display_name: str | None = None
+    description: str | None = None
+
+
+class MaterialListResponse(BaseModel):
+    materials: list[str]
+
+
+class ExperimentDataListResponse(BaseModel):
+    records: list[ExperimentData]

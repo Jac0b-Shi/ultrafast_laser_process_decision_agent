@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import datasets, feedback, recommendations
+from app.routers import data_management, datasets, feedback, recommendations
 from app.settings import get_settings
 
 
@@ -19,6 +19,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.include_router(data_management.router)
     app.include_router(datasets.router)
     app.include_router(recommendations.router)
     app.include_router(feedback.router)
