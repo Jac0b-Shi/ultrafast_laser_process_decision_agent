@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { toNumber } from "@/lib/utils";
 import type { DatasetSummary, ModelInfo, RecommendationResponse } from "@/types/api";
@@ -51,6 +51,7 @@ export function Workbench() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("results");
+  const abortRef = useRef<AbortController | null>(null);
 
   async function loadSummary() {
     setError("");
@@ -104,12 +105,17 @@ export function Workbench() {
   }
 
   async function submitRecommendationWithAlgorithm(algorithm: string) {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setError("");
     setMessage("");
     try {
       const payload = await apiFetch<RecommendationResponse>("/api/recommendations", {
         method: "POST",
+        signal: controller.signal,
         body: JSON.stringify({
           material: form.material || null,
           target_depth_um: toNumber(form.targetDepth),
@@ -131,13 +137,21 @@ export function Workbench() {
       });
       setActiveTab("results");
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "推荐请求失败");
     } finally {
-      setLoading(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setLoading(false);
+      }
     }
   }
 
   async function submitRecommendation() {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setError("");
     setMessage("");
@@ -145,6 +159,7 @@ export function Workbench() {
     try {
       const payload = await apiFetch<RecommendationResponse>("/api/recommendations", {
         method: "POST",
+        signal: controller.signal,
         body: JSON.stringify({
           material: form.material || null,
           target_depth_um: toNumber(form.targetDepth),
@@ -166,9 +181,13 @@ export function Workbench() {
       });
       setActiveTab("results");
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "推荐请求失败");
     } finally {
-      setLoading(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setLoading(false);
+      }
     }
   }
 
