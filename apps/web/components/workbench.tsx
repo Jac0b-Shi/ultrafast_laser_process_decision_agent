@@ -99,12 +99,12 @@ export function Workbench() {
 
   function handleAlgorithmChange(algorithm: string) {
     if (result && !loading) {
-      // Auto-trigger analysis when switching algorithm with existing result
-      submitRecommendationWithAlgorithm(algorithm);
+      submitRecommendation(algorithm);
     }
   }
 
-  async function submitRecommendationWithAlgorithm(algorithm: string) {
+  async function submitRecommendation(algorithmOverride?: string) {
+    const algorithm = algorithmOverride ?? form.algorithm ?? "random_forest";
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -112,6 +112,9 @@ export function Workbench() {
     setLoading(true);
     setError("");
     setMessage("");
+    if (!algorithmOverride) {
+      setSelectedRank(null);
+    }
     try {
       const payload = await apiFetch<RecommendationResponse>("/api/recommendations", {
         method: "POST",
@@ -122,7 +125,7 @@ export function Workbench() {
           target_diameter_um: toNumber(form.targetDiameter),
           max_roughness_um: toNumber(form.maxRoughness),
           top_k: Number(form.topK) || 3,
-          algorithm: algorithm || "random_forest",
+          algorithm,
           constraints: {},
         }),
       });
@@ -132,51 +135,7 @@ export function Workbench() {
       }
       setAlgoResults((prev) => {
         const next = new Map(prev);
-        next.set(algorithm || "random_forest", payload);
-        return next;
-      });
-      setActiveTab("results");
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      setError(err instanceof Error ? err.message : "推荐请求失败");
-    } finally {
-      if (abortRef.current === controller) {
-        abortRef.current = null;
-        setLoading(false);
-      }
-    }
-  }
-
-  async function submitRecommendation() {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setLoading(true);
-    setError("");
-    setMessage("");
-    setSelectedRank(null);
-    try {
-      const payload = await apiFetch<RecommendationResponse>("/api/recommendations", {
-        method: "POST",
-        signal: controller.signal,
-        body: JSON.stringify({
-          material: form.material || null,
-          target_depth_um: toNumber(form.targetDepth),
-          target_diameter_um: toNumber(form.targetDiameter),
-          max_roughness_um: toNumber(form.maxRoughness),
-          top_k: Number(form.topK) || 3,
-          algorithm: form.algorithm || "random_forest",
-          constraints: {},
-        }),
-      });
-      setResult(payload);
-      if (payload.recommendations[0]) {
-        setSelectedRank(payload.recommendations[0].rank);
-      }
-      setAlgoResults((prev) => {
-        const next = new Map(prev);
-        next.set(form.algorithm || "random_forest", payload);
+        next.set(algorithm, payload);
         return next;
       });
       setActiveTab("results");
