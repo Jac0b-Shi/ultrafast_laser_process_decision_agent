@@ -1,0 +1,6 @@
+# Root-level development & scripts dependencies
+# The API backend has its own dependency management in apps/api/pyproject.toml
+
+numpy>=1.26.0
+pandas>=2.2.0
+openpyxl>=3.1.0

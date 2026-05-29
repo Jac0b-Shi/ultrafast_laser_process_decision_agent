@@ -31,6 +31,8 @@ data/interim/*
 !data/interim/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
+data/feedback/*
+!data/feedback/.gitkeep
 experiments/runs/*
 !experiments/runs/.gitkeep
 experiments/feedback_logs/*
