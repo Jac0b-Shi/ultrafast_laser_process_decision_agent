@@ -170,6 +170,9 @@ export function DataManagement() {
     }));
   };
 
+  const toInputValue = (value: string | number | boolean | null | undefined) =>
+    typeof value === "boolean" ? "" : value ?? "";
+
   const getSourceLabel = (source: string) => {
     switch (source) {
       case "system":
@@ -358,7 +361,7 @@ export function DataManagement() {
                           <input
                             type="number"
                             step="any"
-                            value={form[field.key as keyof typeof form] ?? ""}
+                            value={toInputValue(form[field.key as keyof typeof form])}
                             onChange={(e) =>
                               handleInputChange(field.key as keyof typeof form, e.target.value)
                             }
@@ -382,7 +385,7 @@ export function DataManagement() {
                           <input
                             type="number"
                             step="any"
-                            value={form[field.key as keyof typeof form] ?? ""}
+                            value={toInputValue(form[field.key as keyof typeof form])}
                             onChange={(e) =>
                               handleInputChange(field.key as keyof typeof form, e.target.value)
                             }

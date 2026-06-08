@@ -186,7 +186,10 @@ export function Workbench({
   }
 
   function restoreFromHistory(entry: HistoryEntry) {
-    setForm(entry.query);
+    setForm({
+      ...entry.query,
+      algorithm: entry.query.algorithm ?? "random_forest",
+    });
     setResult(null);
     setSelectedRank(null);
     setMessage("");
