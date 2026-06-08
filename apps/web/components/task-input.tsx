@@ -162,7 +162,7 @@ export function TaskInput({
 
         {/* submit */}
         <button
-          onClick={onSubmit}
+          onClick={() => onSubmit()}
           disabled={loading || !form.material}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
         >
