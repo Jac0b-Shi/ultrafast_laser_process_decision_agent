@@ -26,6 +26,10 @@ class RecommendationRequest(BaseModel):
     target_depth_um: float | None = None
     target_diameter_um: float | None = None
     max_roughness_um: float | None = None
+    target_min_depth_um: float | None = None
+    target_max_depth_um: float | None = None
+    max_sq_um: float | None = None
+    max_sz_um: float | None = None
     constraints: dict[str, Any] = Field(default_factory=dict)
     top_k: int = Field(default=3, ge=1, le=10)
     algorithm: str = Field(default="random_forest")
@@ -39,6 +43,7 @@ class CaseMatch(BaseModel):
     parameters: dict[str, float]
     intermediate_metrics: dict[str, float]
     quality: dict[str, float]
+    quality_flags: list[str] = Field(default_factory=list)
     score: float
 
 
@@ -55,6 +60,8 @@ class ModelInfo(BaseModel):
 class ParameterRecommendation(BaseModel):
     rank: int
     generation_method: str
+    candidate_source: str
+    execution_eligibility: str
     model_name: str | None = None
     algorithm: str | None = None
     parameters: dict[str, float]
@@ -80,6 +87,8 @@ class RecommendationResponse(BaseModel):
 
 class ExperimentFeedback(BaseModel):
     task: RecommendationRequest
+    candidate_source: str
+    execution_eligibility: str
     selected_parameters: dict[str, float]
     measured_quality: dict[str, float]
     operator: str | None = None
@@ -109,9 +118,16 @@ class ExperimentData(BaseModel):
     processing_time_s: float | None = Field(default=None, ge=0, le=360000)
     average_power_w: float | None = Field(default=None, ge=0, le=100000)
     peak_power_kw: float | None = Field(default=None, ge=0, le=1000000)
-    depth_um: float | None = Field(default=None, ge=0, le=100000)
+    # Raw system records may contain a negative datum-relative depth.  The
+    # recommender excludes it, while data management keeps it for audit.
+    depth_um: float | None = Field(default=None, ge=-100000, le=100000)
     diameter_um: float | None = Field(default=None, ge=0, le=100000)
     roughness_um: float | None = Field(default=None, ge=0, le=1000)
+    sq_um: float | None = Field(default=None, ge=0, le=1000)
+    sz_um: float | None = Field(default=None, ge=0, le=10000)
+    min_depth_um: float | None = Field(default=None, ge=-100000, le=100000)
+    max_depth_um: float | None = Field(default=None, ge=-100000, le=100000)
+    quality_flags: list[str] = Field(default_factory=list)
     is_active: bool = True
     data_source: str = "user"
     note: str | None = None

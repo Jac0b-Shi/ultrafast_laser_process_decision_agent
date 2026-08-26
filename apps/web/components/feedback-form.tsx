@@ -24,6 +24,7 @@ export function FeedbackForm({
     result && selectedRank !== null
       ? result.recommendations.find((r) => r.rank === selectedRank) ?? null
       : null;
+  const feedbackEligible = selectedRec?.execution_eligibility === "reviewable";
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mt-4">
@@ -58,7 +59,7 @@ export function FeedbackForm({
 
         <button
           onClick={() => onSubmit()}
-          disabled={!selectedRec || feedbackLoading}
+          disabled={!feedbackEligible || feedbackLoading}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
         >
           <Save size={14} />

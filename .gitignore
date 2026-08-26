@@ -31,6 +31,10 @@ data/user_experiments.jsonl
 *.sqlite
 *.sqlite3
 *.db
+opensca.log
+output.html
+output.json
+report_content.txt
 data/interim/*
 !data/interim/.gitkeep
 data/processed/*
@@ -43,6 +47,16 @@ experiments/feedback_logs/*
 !experiments/feedback_logs/.gitkeep
 experiments/实验数据反馈日志/*
 !experiments/实验数据反馈日志/.gitkeep
+tmp/
+docs/research/*.pdf
+!docs/research/agent_feedback_process_modeling_report.pdf
+docs/research/*.docx
+docs/research/*.png
+docs/research/*.bak*
+docs/literature/arxiv/*.pdf
+!docs/literature/arxiv/.gitkeep
+docs/literature/local/*.pdf
+!docs/literature/local/.gitkeep
 
 # OS / editor
 .DS_Store
@@ -50,6 +64,8 @@ Thumbs.db
 .idea/
 .vscode/
 .claude/
+.codebuddy/
+.workbuddy/
 .playwright-mcp/
 
 # Shared IDE run entries

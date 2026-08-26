@@ -18,6 +18,40 @@ def test_dataset_summary() -> None:
     payload = response.json()
     assert payload["total_samples"] > 0
     assert payload["raw_files"]
+    materials = {item["material"]: item for item in payload["materials"]}
+    assert {"AlSiC", "CFRP", "SiC", "ZrO2"}.issubset(materials)
+    assert materials["CFRP"]["sample_count"] == 128
+    assert {"sq_um", "sz_um", "min_depth_um", "max_depth_um"}.issubset(materials["AlSiC"]["quality_metrics"])
+
+
+def test_csv_material_extended_quality_request() -> None:
+    response = client.post(
+        "/api/recommendations",
+        json={
+            "material": "ZrO2",
+            "target_depth_um": 14,
+            "target_min_depth_um": 10,
+            "target_max_depth_um": 18,
+            "max_roughness_um": 2,
+            "max_sq_um": 3,
+            "max_sz_um": 15,
+            "top_k": 1,
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["recommendations"]
+    assert payload["recommendations"][0]["similar_cases"][0]["material"] == "ZrO2"
+
+
+def test_csv_data_management_retains_negative_depth_as_audit_only() -> None:
+    response = client.get("/api/data-management/experiments/AlSiC")
+    assert response.status_code == 200
+    records = response.json()["records"]
+    flagged = [record for record in records if record["quality_flags"]]
+    assert flagged
+    assert any(record["depth_um"] < 0 for record in flagged)
+    assert all(record["data_source"] == "system" for record in records)
 
 
 def test_model_info() -> None:
@@ -46,6 +80,11 @@ def test_recommendations() -> None:
     assert payload["candidate_size"] > 0
     assert payload["model_info"]["model_name"] == "range_guarded_random_forest_regressor"
     assert payload["recommendations"][0]["generation_method"] == "ml_regression_fit"
+    assert payload["recommendations"][0]["candidate_source"] in {"historical", "perturbed"}
+    expected_eligibility = (
+        "reviewable" if payload["recommendations"][0]["candidate_source"] == "historical" else "diagnostic_only"
+    )
+    assert payload["recommendations"][0]["execution_eligibility"] == expected_eligibility
     assert payload["recommendations"][0]["model_name"] == "range_guarded_random_forest_regressor"
     assert payload["recommendations"][0]["rank"] == 0
     assert payload["recommendations"][0]["intermediate_metrics"]
@@ -53,8 +92,25 @@ def test_recommendations() -> None:
     assert payload["recommendations"][0]["similar_cases"]
     assert payload["recommendations"][0]["similar_cases"][0]["intermediate_metrics"]
     assert payload["recommendations"][1]["generation_method"] == "historical_similarity"
+    assert payload["recommendations"][1]["candidate_source"] == "historical"
+    assert payload["recommendations"][1]["execution_eligibility"] == "reviewable"
     assert payload["recommendations"][1]["rank"] == 1
     assert len(payload["recommendations"]) == 3
+
+
+def test_feedback_rejects_generated_candidate_direct_api_bypass() -> None:
+    response = client.post(
+        "/api/feedback",
+        json={
+            "task": {"material": "BF33", "top_k": 1, "constraints": {}},
+            "candidate_source": "perturbed",
+            "execution_eligibility": "diagnostic_only",
+            "selected_parameters": {"repetition_frequency_khz": 20.0},
+            "measured_quality": {"depth_um": 10.0},
+        },
+    )
+    assert response.status_code == 409
+    assert "仅用于诊断" in response.json()["detail"]
 
 
 def _assert_material_metrics(material: str, expected_metrics: set[str]) -> None:

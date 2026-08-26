@@ -17,6 +17,10 @@ type FormState = {
   targetDepth: string;
   targetDiameter: string;
   maxRoughness: string;
+  targetMinDepth: string;
+  targetMaxDepth: string;
+  maxSq: string;
+  maxSz: string;
   topK: string;
   algorithm: string;
   notes: string;
@@ -35,6 +39,10 @@ const initialForm: FormState = {
   targetDepth: "40",
   targetDiameter: "",
   maxRoughness: "",
+  targetMinDepth: "",
+  targetMaxDepth: "",
+  maxSq: "",
+  maxSz: "",
   topK: "3",
   algorithm: "random_forest",
   notes: "",
@@ -86,6 +94,10 @@ export function Workbench({
       ...c,
       material,
       targetDiameter: next?.quality_metrics.includes("diameter_um") ? c.targetDiameter : "",
+      targetMinDepth: next?.quality_metrics.includes("min_depth_um") ? c.targetMinDepth : "",
+      targetMaxDepth: next?.quality_metrics.includes("max_depth_um") ? c.targetMaxDepth : "",
+      maxSq: next?.quality_metrics.includes("sq_um") ? c.maxSq : "",
+      maxSz: next?.quality_metrics.includes("sz_um") ? c.maxSz : "",
     }));
   }
 
@@ -124,6 +136,10 @@ export function Workbench({
           target_depth_um: toNumber(form.targetDepth),
           target_diameter_um: toNumber(form.targetDiameter),
           max_roughness_um: toNumber(form.maxRoughness),
+          target_min_depth_um: toNumber(form.targetMinDepth),
+          target_max_depth_um: toNumber(form.targetMaxDepth),
+          max_sq_um: toNumber(form.maxSq),
+          max_sz_um: toNumber(form.maxSz),
           top_k: Number(form.topK) || 3,
           algorithm,
           constraints: {},
@@ -166,10 +182,16 @@ export function Workbench({
             target_depth_um: toNumber(form.targetDepth),
             target_diameter_um: toNumber(form.targetDiameter),
             max_roughness_um: toNumber(form.maxRoughness),
+            target_min_depth_um: toNumber(form.targetMinDepth),
+            target_max_depth_um: toNumber(form.targetMaxDepth),
+            max_sq_um: toNumber(form.maxSq),
+            max_sz_um: toNumber(form.maxSz),
             algorithm: form.algorithm || "random_forest",
             constraints: {},
             top_k: Number(form.topK) || 3,
           },
+          candidate_source: selectedRecommendation.candidate_source,
+          execution_eligibility: selectedRecommendation.execution_eligibility,
           selected_parameters: selectedRecommendation.parameters,
           measured_quality: selectedRecommendation.predicted_quality,
           operator: "web-mvp",
@@ -210,11 +232,16 @@ export function Workbench({
                 targetDepth: form.targetDepth,
                 targetDiameter: form.targetDiameter,
                 maxRoughness: form.maxRoughness,
+                targetMinDepth: form.targetMinDepth,
+                targetMaxDepth: form.targetMaxDepth,
+                maxSq: form.maxSq,
+                maxSz: form.maxSz,
                 topK: form.topK,
                 algorithm: form.algorithm,
               }}
               materials={summary?.materials ?? []}
               diameterAvailable={diameterAvailable}
+              qualityMetrics={selectedMaterial?.quality_metrics ?? []}
               loading={loading}
               error={error}
               message={message}

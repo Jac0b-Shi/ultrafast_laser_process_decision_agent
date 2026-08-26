@@ -106,15 +106,20 @@ stages:
             git reset --hard origin/main
 
             echo "==> validate deployment inputs"
-            RAW_COUNT="$(find "${STATE_DIR}/data/raw" -maxdepth 1 -type f -name '*.xlsx' 2>/dev/null | wc -l | tr -d ' ')"
+            RAW_COUNT="$(find "${STATE_DIR}/data/raw" -maxdepth 1 -type f \( -name '*.xlsx' -o -name '*.csv' \) 2>/dev/null | wc -l | tr -d ' ')"
             if [ "${RAW_COUNT}" -eq 0 ]; then
-              echo "ERROR: no raw Excel files found under data/raw; refusing to deploy empty dataset"
+              echo "ERROR: no supported raw Excel/CSV files found under persistent data/raw; refusing to deploy empty dataset"
               exit 1
             fi
+            for REQUIRED_CSV in AlSiC.csv CFRP.csv SiC.csv ZrO2.csv; do
+              test -f "${STATE_DIR}/data/raw/${REQUIRED_CSV}" || {
+                echo "ERROR: required persistent raw CSV is missing: ${REQUIRED_CSV}"
+                exit 1
+              }
+            done
             grep -q 'LASER_DATA_DIR: /workspace/data' docker-compose.prod.yml
             grep -q '/data:/workspace/data' docker-compose.prod.yml
             grep -q 'API_INTERNAL_URL:' docker-compose.prod.yml
-
             echo "==> docker compose version"
             if docker compose version >/dev/null 2>&1; then
               COMPOSE="docker compose"
@@ -149,7 +154,3 @@ stages:
             $COMPOSE -f docker-compose.prod.yml ps
             BASH
         strategy: {}
-
-
-
-

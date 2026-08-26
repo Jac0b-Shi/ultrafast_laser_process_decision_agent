@@ -17,7 +17,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 
 from app.schemas import CaseMatch, ModelInfo, ParameterRecommendation, RecommendationRequest, RecommendationResponse
-from app.services.data_loader import PARAMETER_COLUMNS, QUALITY_COLUMNS, load_dataset
+from app.services.data_loader import DEPTH_COLUMNS, PARAMETER_COLUMNS, QUALITY_COLUMNS, load_dataset
+from app.services.scoring import legacy_quality_loss, score_quality
 
 INTERMEDIATE_METRIC_COLUMNS = [
     "line_pulse_density_pulses_mm",
@@ -39,7 +40,10 @@ MODEL_FEATURE_COLUMNS = PARAMETER_COLUMNS + [
 MODEL_INFO = ModelInfo(
     model_name="range_guarded_random_forest_regressor",
     model_version="0.4.0",
-    model_type="材料定制中间量 + 规则范围守卫 + 相似案例筛选 + 多算法回归拟合 (RandomForest / MLP / GBDT / Linear / SVR)",
+    model_type=(
+        "材料定制中间量 + 规则范围守卫 + 相似案例筛选 + 多算法回归拟合 "
+        "(RandomForestRegressor / MLPRegressor / GradientBoostingRegressor / LinearRegression / SVR)"
+    ),
     training_scope=(
         "每次请求先按材料和约束筛选历史样本，再按材料构造脉冲密度、剂量指数、"
         "功率链代理或经验交互项等中间量；回归模型使用适用原始参数和中间量拟合参数到质量指标的关系，"
@@ -135,6 +139,17 @@ MATERIAL_FEATURES = {
         "power_chain_proxy_w",
         "marking_energy_proxy",
     ],
+    "csv_five_factor": [
+        "pulse_width_fs",
+        "repetition_frequency_khz",
+        "scan_speed_mm_s",
+        "fill_spacing_um",
+        "marking_count",
+        "line_pulse_density_pulses_mm",
+        "pulse_spacing_um",
+        "cumulative_pulse_density",
+        "dose_index",
+    ],
 }
 
 MATERIAL_EXPLANATIONS = {
@@ -143,6 +158,7 @@ MATERIAL_EXPLANATIONS = {
     "diamond": "金刚石的深度和粗糙度对剂量指数最敏感，因此用频率、速度、加工次数和填充间距构造累积脉冲密度与剂量指数。",
     "microcrystalline_glass": "微晶玻璃的数据更像经验参数主导系统，剂量代理未明显优于原始参数，因此重点保留脉宽、加工时间、离焦量和脉宽-时间交互项。",
     "superalloy": "高温合金表内已有功率链变量，直径更接近平均功率控制，深度和粗糙度更受标记频率影响，因此推荐逻辑使用功率代理、占空比和标记能量代理。",
+    "csv_five_factor": "该材料使用同一批五因素试验设计；推荐仅在本材料历史范围内按脉冲密度、累计脉冲密度和间距归一剂量代理筛选相似案例。",
     "generic": "当前候选集未落入已知单一材料类型，系统使用可用原始参数和可计算中间量进行保守推荐。",
 }
 
@@ -192,6 +208,8 @@ def _number_dict(row: pd.Series, columns: list[str]) -> dict[str, float]:
 
 def _material_family(material: Any) -> str:
     text = str(material or "").casefold()
+    if text in {"alsic", "cfrp", "sic", "zro2"}:
+        return "csv_five_factor"
     if "bf33" in text:
         return "bf33"
     if "碳化硅" in text or "sic" in text or "4h" in text:
@@ -268,14 +286,14 @@ def _intermediate_metrics(row: pd.Series, material: Any, threshold_density: floa
         if value is not None and math.isfinite(value):
             metrics[name] = value
 
-    if family in {"bf33", "sic", "diamond"}:
+    if family in {"bf33", "sic", "diamond", "csv_five_factor"}:
         add("line_pulse_density_pulses_mm", line_density)
         add("pulse_spacing_um", pulse_spacing)
 
     if family == "sic":
         add("threshold_relative_density", _safe_divide(line_density, threshold_density))
 
-    if family == "diamond":
+    if family in {"diamond", "csv_five_factor"}:
         marking_count = _to_float(row.get("marking_count"))
         fill_spacing = _to_float(row.get("fill_spacing_um"))
         cumulative_density = line_density * marking_count if line_density is not None and marking_count is not None else None
@@ -357,45 +375,21 @@ def _apply_constraints(frame: pd.DataFrame, constraints: dict[str, Any]) -> pd.D
 
 
 def _score_row(row: pd.Series, frame: pd.DataFrame, request: RecommendationRequest) -> float:
-    return _score_quality(_number_dict(row, QUALITY_COLUMNS), frame, request)
+    quality = _number_dict(row, QUALITY_COLUMNS)
+    parameters = _number_dict(row, PARAMETER_COLUMNS)
+    result = score_quality(
+        quality,
+        frame,
+        request,
+        variant="full_score",
+        parameters=parameters,
+        parameter_columns=PARAMETER_COLUMNS,
+    )
+    return float(result["total_loss"])
 
 
 def _score_quality(quality: dict[str, float], frame: pd.DataFrame, request: RecommendationRequest) -> float:
-    score = 0.0
-    terms = 0
-
-    targets = [
-        ("depth_um", request.target_depth_um),
-        ("diameter_um", request.target_diameter_um),
-    ]
-    for column, target in targets:
-        if target is None:
-            continue
-        terms += 1
-        value = quality.get(column)
-        if not _finite(value):
-            score += 2.0
-            continue
-        score += abs(float(value) - target) / _scale(frame, column)
-
-    if request.max_roughness_um is not None:
-        terms += 1
-        value = quality.get("roughness_um")
-        if not _finite(value):
-            score += 1.5
-        elif float(value) <= request.max_roughness_um:
-            score += 0.2 * (float(value) / max(request.max_roughness_um, 1e-9))
-        else:
-            score += 1.0 + (float(value) - request.max_roughness_um) / max(request.max_roughness_um, 1e-9)
-
-    if terms == 0:
-        roughness = quality.get("roughness_um")
-        depth = quality.get("depth_um")
-        score += float(roughness) if _finite(roughness) else 1.0
-        score -= 0.05 * float(depth) if _finite(depth) else 0.0
-
-    missing_quality = sum(1 for column in QUALITY_COLUMNS if not _finite(quality.get(column)))
-    return score + 0.05 * missing_quality
+    return legacy_quality_loss(quality, frame, request)
 
 
 def _case_match(row: pd.Series, score: float) -> CaseMatch:
@@ -407,6 +401,7 @@ def _case_match(row: pd.Series, score: float) -> CaseMatch:
         parameters=_number_dict(row, PARAMETER_COLUMNS),
         intermediate_metrics=_number_dict(row, INTERMEDIATE_METRIC_COLUMNS),
         quality=_number_dict(row, QUALITY_COLUMNS),
+        quality_flags=list(row.get("quality_flags") or []) if isinstance(row.get("quality_flags"), list) else [],
         score=round(1.0 / (1.0 + max(score, 0.0)), 4),
     )
 
@@ -432,6 +427,8 @@ def _validate_observed_target_ranges(frame: pd.DataFrame, request: Recommendatio
     checks = [
         ("target_depth_um", "depth_um", request.target_depth_um, "目标深度"),
         ("target_diameter_um", "diameter_um", request.target_diameter_um, "目标直径"),
+        ("target_min_depth_um", "min_depth_um", request.target_min_depth_um, "目标最小深度"),
+        ("target_max_depth_um", "max_depth_um", request.target_max_depth_um, "目标最大深度"),
     ]
     violations: list[dict[str, Any]] = []
 
@@ -440,32 +437,25 @@ def _validate_observed_target_ranges(frame: pd.DataFrame, request: Recommendatio
             continue
         values = frame[column].dropna()
         if len(values) < 3:
-            violations.append(
-                {
-                    "field": request_field,
-                    "metric": column,
-                    "label": label,
-                    "requested": target,
-                    "reason": "insufficient_observations",
-                    "sample_count": int(len(values)),
-                }
-            )
+            violations.append({"field": request_field, "metric": column, "label": label, "requested": target, "reason": "insufficient_observations", "sample_count": int(len(values))})
             continue
         minimum, maximum, buffer = _range_summary(values)
         if target < minimum - buffer or target > maximum + buffer:
-            violations.append(
-                {
-                    "field": request_field,
-                    "metric": column,
-                    "label": label,
-                    "requested": target,
-                    "observed_min": round(minimum, 6),
-                    "observed_max": round(maximum, 6),
-                    "allowed_min": round(minimum - buffer, 6),
-                    "allowed_max": round(maximum + buffer, 6),
-                    "sample_count": int(len(values)),
-                }
-            )
+            violations.append({"field": request_field, "metric": column, "label": label, "requested": target, "observed_min": round(minimum, 6), "observed_max": round(maximum, 6), "allowed_min": round(minimum - buffer, 6), "allowed_max": round(maximum + buffer, 6), "sample_count": int(len(values))})
+
+    for request_field, column, limit, label in (
+        ("max_sq_um", "sq_um", request.max_sq_um, "Sq 上限"),
+        ("max_sz_um", "sz_um", request.max_sz_um, "Sz 上限"),
+    ):
+        if limit is None or column not in frame:
+            continue
+        values = frame[column].dropna()
+        if len(values) < 3:
+            violations.append({"field": request_field, "metric": column, "label": label, "requested": limit, "reason": "insufficient_observations", "sample_count": int(len(values))})
+            continue
+        minimum, maximum, buffer = _range_summary(values)
+        if limit < minimum - buffer:
+            violations.append({"field": request_field, "metric": column, "label": label, "requested": limit, "observed_min": round(minimum, 6), "observed_max": round(maximum, 6), "allowed_min": round(minimum - buffer, 6), "allowed_max": None, "sample_count": int(len(values))})
 
     if violations:
         material = request.material or "当前候选集"
@@ -490,6 +480,10 @@ def _regression_targets(frame: pd.DataFrame, request: RecommendationRequest) -> 
         ("depth_um", request.target_depth_um is not None),
         ("diameter_um", request.target_diameter_um is not None),
         ("roughness_um", request.max_roughness_um is not None),
+        ("min_depth_um", request.target_min_depth_um is not None),
+        ("max_depth_um", request.target_max_depth_um is not None),
+        ("sq_um", request.max_sq_um is not None),
+        ("sz_um", request.max_sz_um is not None),
     ]
     targets = [
         column
@@ -616,9 +610,12 @@ def _generate_regression_candidates(
     maximums = feature_frame.max(numeric_only=True)
     rng = np.random.default_rng(RANDOM_STATE)
 
-    rows: list[dict[str, float]] = []
+    rows: list[dict[str, Any]] = []
     for _, row in feature_frame.dropna(how="all").iterrows():
-        rows.append(_filled_feature_row(row, parameter_columns, medians))
+        historical = _filled_feature_row(row, parameter_columns, medians)
+        historical["candidate_source"] = "historical"
+        historical["execution_eligibility"] = "reviewable"
+        rows.append(historical)
 
     top_indices = [index for index, _ in scored_rows[: min(12, len(scored_rows))]]
     if top_indices:
@@ -632,13 +629,17 @@ def _generate_regression_candidates(
                     other = all_feature_rows.iloc[int(rng.integers(0, len(all_feature_rows)))].fillna(medians)
                 alpha = float(rng.uniform(0.55, 0.9))
                 blended = alpha * base + (1.0 - alpha) * other
-                candidate: dict[str, float] = {}
+                candidate: dict[str, Any] = {}
                 for column in parameter_columns:
                     span = float(maximums[column] - minimums[column])
                     jitter = float(rng.normal(0, span * 0.025)) if span > 0 else 0.0
                     value = float(blended[column] + jitter)
                     value = min(max(value, float(minimums[column])), float(maximums[column]))
                     candidate[column] = value
+                # The final point is both interpolated and jittered. Its final
+                # source is classified as perturbed, the last generating step.
+                candidate["candidate_source"] = "perturbed"
+                candidate["execution_eligibility"] = "diagnostic_only"
                 rows.append(candidate)
 
     generated = pd.DataFrame(rows).drop_duplicates()
@@ -743,7 +744,16 @@ def _ml_recommendations(
         predicted, uncertainty = _predict_quality_and_uncertainty(models, feature_columns, feature_row, residual_std)
         if not predicted:
             continue
-        raw_score = _score_quality(predicted, frame, request)
+        score_result = score_quality(
+            predicted,
+            frame,
+            request,
+            variant="full_score",
+            uncertainty=uncertainty,
+            parameters=_number_dict(feature_row, PARAMETER_COLUMNS),
+            parameter_columns=PARAMETER_COLUMNS,
+        )
+        raw_score = float(score_result["total_loss"])
         ranked.append((raw_score, feature_row.copy(), predicted, uncertainty))
 
     ranked.sort(key=lambda item: item[0])
@@ -773,10 +783,14 @@ def _ml_recommendations(
 
     for rank, (raw_score, feature_row, predicted, uncertainty) in enumerate(ranked[:1], start=0):
         score = round(1.0 / (1.0 + max(raw_score, 0.0)), 4)
+        candidate_source = str(feature_row.get("candidate_source", "perturbed"))
+        execution_eligibility = str(feature_row.get("execution_eligibility", "diagnostic_only"))
         recommendations.append(
             ParameterRecommendation(
                 rank=rank,
                 generation_method="ml_regression_fit",
+                candidate_source=candidate_source,
+                execution_eligibility=execution_eligibility,
                 model_name=MODEL_INFO.model_name,
                 algorithm=algo_label,
                 parameters=_number_dict(feature_row, PARAMETER_COLUMNS),
@@ -787,6 +801,11 @@ def _ml_recommendations(
                 rationale=(
                     "先按材料和目标质量检索相似历史案例，再按材料构造中间量，"
                     f"用 {algo_label} 在 {len(frame)} 条候选样本上拟合并生成该候选。"
+                    + (
+                        "该参数由插值和扰动生成，仅用于诊断分析，不构成可执行实验建议。"
+                        if execution_eligibility == "diagnostic_only"
+                        else "该参数来自历史实验记录，执行前仍需人工复核。"
+                    )
                 ),
                 material_explanation=_material_explanation(material),
                 similar_cases=similar_cases,
@@ -801,6 +820,8 @@ def _ml_recommendations(
             f"已训练 {len(models)} 个{algo_label}回归模型，输入特征：{', '.join(feature_columns)}；"
             f"拟合目标：{', '.join(models.keys())}。"
         )
+        if any(item.execution_eligibility == "diagnostic_only" for item in recommendations):
+            notes.append("生成参数尚未完成设备步长、联合可达性和前瞻加工验证，仅用于诊断分析。")
     return recommendations, notes
 
 
@@ -826,6 +847,13 @@ def recommend_parameters(request: RecommendationRequest) -> RecommendationRespon
                 notes.append(f"未找到材料 {request.material} 的样本，已回退到全量数据。")
         else:
             candidates = exact
+
+    # Negative depth values are retained by the data-management API as audit
+    # observations, but must never create an executable target range or model.
+    candidates = candidates.copy()
+    for column in DEPTH_COLUMNS:
+        if column in candidates:
+            candidates.loc[pd.to_numeric(candidates[column], errors="coerce") < 0, column] = np.nan
 
     _validate_observed_target_ranges(candidates, request)
 
@@ -862,6 +890,8 @@ def recommend_parameters(request: RecommendationRequest) -> RecommendationRespon
             ParameterRecommendation(
                 rank=rank,
                 generation_method="historical_similarity",
+                candidate_source="historical",
+                execution_eligibility="reviewable",
                 model_name=None,
                 parameters=_number_dict(row, PARAMETER_COLUMNS),
                 intermediate_metrics=_number_dict(row, INTERMEDIATE_METRIC_COLUMNS),

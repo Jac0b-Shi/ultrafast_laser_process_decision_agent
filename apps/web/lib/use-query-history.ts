@@ -14,6 +14,10 @@ export type HistoryEntry = {
     targetDepth: string;
     targetDiameter: string;
     maxRoughness: string;
+    targetMinDepth: string;
+    targetMaxDepth: string;
+    maxSq: string;
+    maxSz: string;
     topK: string;
     notes: string;
     algorithm?: string;
