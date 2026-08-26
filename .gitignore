@@ -24,6 +24,10 @@ pnpm-debug.log*
 !.env.example
 
 # Runtime outputs
+.runtime-state/
+data/raw/*
+!data/raw/.gitkeep
+data/user_experiments.jsonl
 *.sqlite
 *.sqlite3
 *.db

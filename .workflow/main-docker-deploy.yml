@@ -93,20 +93,27 @@ stages:
 
             cd "${DEPLOY_DIR}"
 
+            # Runtime data must not live in the Git worktree: the deployment
+            # deliberately resets that worktree to origin/main on every run.
+            STATE_DIR="${DEPLOY_STATE_DIR:-${DEPLOY_DIR}/.runtime-state}"
+            mkdir -p "${STATE_DIR}/data/raw" \
+              "${STATE_DIR}/experiments/runs" \
+              "${STATE_DIR}/experiments/feedback_logs"
+            export DEPLOY_STATE_DIR="${STATE_DIR}"
+
             echo "==> refresh compose file from main"
             git fetch origin main
             git reset --hard origin/main
 
             echo "==> validate deployment inputs"
-            RAW_COUNT="$(find data/raw -maxdepth 1 -type f -name '*.xlsx' 2>/dev/null | wc -l | tr -d ' ')"
+            RAW_COUNT="$(find "${STATE_DIR}/data/raw" -maxdepth 1 -type f -name '*.xlsx' 2>/dev/null | wc -l | tr -d ' ')"
             if [ "${RAW_COUNT}" -eq 0 ]; then
               echo "ERROR: no raw Excel files found under data/raw; refusing to deploy empty dataset"
               exit 1
             fi
             grep -q 'LASER_DATA_DIR: /workspace/data' docker-compose.prod.yml
-            grep -q './data:/workspace/data' docker-compose.prod.yml
+            grep -q '/data:/workspace/data' docker-compose.prod.yml
             grep -q 'API_INTERNAL_URL:' docker-compose.prod.yml
-            mkdir -p experiments/runs experiments/feedback_logs
 
             echo "==> docker compose version"
             if docker compose version >/dev/null 2>&1; then
@@ -142,7 +149,6 @@ stages:
             $COMPOSE -f docker-compose.prod.yml ps
             BASH
         strategy: {}
-
 
 
 

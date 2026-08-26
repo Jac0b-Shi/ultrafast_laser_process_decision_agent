@@ -8,20 +8,25 @@ from fastapi import APIRouter, HTTPException
 
 from app.schemas import ExperimentData, MaterialListResponse, ExperimentDataListResponse, MaterialInfo
 from app.services.data_loader import load_dataset
+from app.settings import get_settings
 
 router = APIRouter(prefix="/api/data-management", tags=["data-management"])
 
 # ── 持久化存储 ──────────────────────────────────────────
-_DATA_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "user_experiments.jsonl"
 _lock = threading.Lock()
+
+
+def _data_file() -> Path:
+    return get_settings().data_dir / "user_experiments.jsonl"
 
 
 def _load_store() -> list[dict]:
     """从 JSONL 文件加载用户新增的实验数据"""
-    if not _DATA_FILE.exists():
+    data_file = _data_file()
+    if not data_file.exists():
         return []
     records: list[dict] = []
-    with open(_DATA_FILE, encoding="utf-8") as f:
+    with open(data_file, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -31,8 +36,9 @@ def _load_store() -> list[dict]:
 
 def _save_store(records: list[dict]) -> None:
     """将用户新增的实验数据写入 JSONL 文件"""
-    _DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(_DATA_FILE, "w", encoding="utf-8") as f:
+    data_file = _data_file()
+    data_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(data_file, "w", encoding="utf-8") as f:
         for record in records:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
