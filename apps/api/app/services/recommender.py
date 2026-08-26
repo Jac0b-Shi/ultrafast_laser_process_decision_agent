@@ -681,6 +681,31 @@ def _predict_quality_and_uncertainty(
     return predicted, uncertainty
 
 
+def _predict_quality_batch(
+    models: dict[str, Pipeline],
+    feature_columns: list[str],
+    feature_rows: pd.DataFrame,
+    train_residual_std: dict[str, float] | None = None,
+) -> list[tuple[dict[str, float], dict[str, float]]]:
+    """Predict all candidates in one call per target.
+
+    The recommender ranks both historical and diagnostic candidates.  Calling
+    ``Pipeline.predict`` once per row made random-forest inference dominate
+    request time for multi-target queries.  Batched prediction preserves the
+    exact model outputs while keeping the request within the reverse-proxy
+    deadline.
+    """
+    input_frame = feature_rows[feature_columns]
+    outputs: list[tuple[dict[str, float], dict[str, float]]] = [({}, {}) for _ in range(len(input_frame))]
+    for target, model in models.items():
+        values = model.predict(input_frame)
+        fallback = round((train_residual_std or {}).get(target, 0.0), 4)
+        for index, value in enumerate(values):
+            outputs[index][0][target] = round(float(value), 4)
+            outputs[index][1][target] = fallback
+    return outputs
+
+
 def _extract_feature_importance(
     models: dict[str, Pipeline],
     feature_columns: list[str],
@@ -735,11 +760,13 @@ def _ml_recommendations(
     if generated.empty:
         return [], ["拟合候选参数生成失败，已回退到历史相似案例推荐。"]
 
+    valid_generated = generated.dropna(subset=feature_columns).copy()
+    if valid_generated.empty:
+        return [], ["候选参数缺少回归所需特征，已回退到历史相似案例推荐。"]
+
+    batch_predictions = _predict_quality_batch(models, feature_columns, valid_generated, residual_std)
     ranked: list[tuple[float, pd.Series, dict[str, float], dict[str, float]]] = []
-    for _, feature_row in generated.iterrows():
-        if any(column not in feature_row or not _finite(feature_row.get(column)) for column in feature_columns):
-            continue
-        predicted, uncertainty = _predict_quality_and_uncertainty(models, feature_columns, feature_row, residual_std)
+    for (_, feature_row), (predicted, uncertainty) in zip(valid_generated.iterrows(), batch_predictions):
         if not predicted:
             continue
         score_result = score_quality(
