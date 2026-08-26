@@ -670,15 +670,13 @@ def _predict_quality_and_uncertainty(
     for target, model in models.items():
         prediction = float(model.predict(input_frame)[0])
         predicted[target] = round(prediction, 4)
-        regressor = model.named_steps["regressor"]
-        try:
-            transformed = model.named_steps["imputer"].transform(input_frame)
-            tree_predictions = [float(tree.predict(transformed)[0]) for tree in regressor.estimators_]
-            uncertainty[target] = round(float(np.std(tree_predictions)), 4)
-        except AttributeError:
-            # Non-ensemble models: fall back to training residual std
-            fallback = (train_residual_std or {}).get(target, 0.0)
-            uncertainty[target] = round(fallback, 4)
+        # Candidate ranking evaluates every historical row plus generated
+        # points.  Calling each individual tree for every point made a six
+        # target request exceed the production reverse-proxy deadline.  The
+        # training residual is deterministic, target-specific and already
+        # available for every regressor, so use it consistently here.
+        fallback = (train_residual_std or {}).get(target, 0.0)
+        uncertainty[target] = round(fallback, 4)
 
     return predicted, uncertainty
 
