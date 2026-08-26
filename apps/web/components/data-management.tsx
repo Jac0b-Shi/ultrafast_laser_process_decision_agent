@@ -14,7 +14,7 @@ export function DataManagement() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const initialForm: Omit<ExperimentData, "case_id" | "material"> = {
+  const initialForm: Omit<ExperimentData, "case_id" | "material" | "quality_flags"> = {
     pulse_width_fs: null,
     repetition_frequency_khz: null,
     scan_speed_mm_s: null,
@@ -30,12 +30,16 @@ export function DataManagement() {
     depth_um: null,
     diameter_um: null,
     roughness_um: null,
+    sq_um: null,
+    sz_um: null,
+    min_depth_um: null,
+    max_depth_um: null,
     is_active: true,
     data_source: "user",
     note: null,
   };
 
-  const [form, setForm] = useState<Omit<ExperimentData, "case_id" | "material">>(initialForm);
+  const [form, setForm] = useState<Omit<ExperimentData, "case_id" | "material" | "quality_flags">>(initialForm);
 
   useEffect(() => {
     fetchMaterials();
@@ -97,6 +101,7 @@ export function DataManagement() {
       ...form,
       case_id: editRecord?.case_id ?? null,
       material: currentMaterial,
+      quality_flags: editRecord?.quality_flags ?? [],
     };
 
     try {
@@ -142,6 +147,10 @@ export function DataManagement() {
       depth_um: record.depth_um,
       diameter_um: record.diameter_um,
       roughness_um: record.roughness_um,
+      sq_um: record.sq_um,
+      sz_um: record.sz_um,
+      min_depth_um: record.min_depth_um,
+      max_depth_um: record.max_depth_um,
       is_active: record.is_active,
       data_source: record.data_source,
       note: record.note,
@@ -218,6 +227,10 @@ export function DataManagement() {
     { key: "depth_um", label: "深度", unit: "μm" },
     { key: "diameter_um", label: "直径", unit: "μm" },
     { key: "roughness_um", label: "粗糙度", unit: "μm" },
+    { key: "sq_um", label: "Sq", unit: "μm" },
+    { key: "sz_um", label: "Sz", unit: "μm" },
+    { key: "min_depth_um", label: "最小深度", unit: "μm" },
+    { key: "max_depth_um", label: "最大深度", unit: "μm" },
   ];
 
   return (
@@ -376,7 +389,7 @@ export function DataManagement() {
                   {/* quality metrics */}
                   <div className="space-y-3">
                     <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide">输出结果</h4>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {qualityFields.map((field) => (
                         <div key={field.key}>
                           <label className="block text-xs text-gray-500 mb-1">
@@ -501,6 +514,11 @@ export function DataManagement() {
                                 {record.depth_um !== null && <p>深度: {record.depth_um} μm</p>}
                                 {record.diameter_um !== null && <p>直径: {record.diameter_um} μm</p>}
                                 {record.roughness_um !== null && <p>粗糙度: {record.roughness_um} μm</p>}
+                                {record.sq_um !== null && <p>Sq: {record.sq_um} μm</p>}
+                                {record.sz_um !== null && <p>Sz: {record.sz_um} μm</p>}
+                                {record.min_depth_um !== null && <p>最小深度: {record.min_depth_um} μm</p>}
+                                {record.max_depth_um !== null && <p>最大深度: {record.max_depth_um} μm</p>}
+                                {record.quality_flags.length > 0 && <p className="text-amber-700">负值，仅审计</p>}
                               </div>
                             </td>
                             <td className="px-4 py-3">
@@ -526,13 +544,15 @@ export function DataManagement() {
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-1">
-                                <button
-                                  onClick={() => handleEdit(record)}
-                                  className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-primary transition-colors"
-                                  title="编辑"
-                                >
-                                  <Edit2 size={14} />
-                                </button>
+                                {record.data_source !== "system" && (
+                                  <button
+                                    onClick={() => handleEdit(record)}
+                                    className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-primary transition-colors"
+                                    title="编辑"
+                                  >
+                                    <Edit2 size={14} />
+                                  </button>
+                                )}
                                 {record.data_source !== "system" && (
                                   <button
                                     onClick={() => record.case_id && handleDelete(record.case_id)}

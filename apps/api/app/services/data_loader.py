@@ -27,7 +27,17 @@ PARAMETER_COLUMNS = [
     "peak_power_kw",
 ]
 
-QUALITY_COLUMNS = ["depth_um", "diameter_um", "roughness_um"]
+QUALITY_COLUMNS = [
+    "depth_um",
+    "diameter_um",
+    "roughness_um",
+    "sq_um",
+    "sz_um",
+    "min_depth_um",
+    "max_depth_um",
+]
+
+DEPTH_COLUMNS = ["depth_um", "min_depth_um", "max_depth_um"]
 
 BASE_COLUMNS = ["case_id", "material", "process_type", "source_file", "source_row"]
 
@@ -96,6 +106,13 @@ FILE_SPECS: dict[str, dict[str, Any]] = {
             "peak_power_kw": "Peak Power(kW)",
         },
     },
+}
+
+CSV_FILE_SPECS: dict[str, dict[str, Any]] = {
+    "AlSiC.csv": {"material": "AlSiC"},
+    "CFRP.csv": {"material": "CFRP"},
+    "SiC.csv": {"material": "SiC"},
+    "ZrO2.csv": {"material": "ZrO2"},
 }
 
 
@@ -173,6 +190,55 @@ def _read_excel_records(path: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _read_csv_records(path: Path) -> list[dict[str, Any]]:
+    spec = CSV_FILE_SPECS.get(path.name)
+    if spec is None:
+        return []
+
+    # The supplied instrument exports are GBK-compatible.  gb18030 is a
+    # superset and still accepts future Chinese labels without lossy decoding.
+    frame = pd.read_csv(path, encoding="gb18030")
+    frame = frame.dropna(how="all")
+    records: list[dict[str, Any]] = []
+    fields = {
+        "pulse_width_fs": "脉宽fs",
+        "repetition_frequency_khz": "频率kHz",
+        "scan_speed_mm_s": "速度mm/s",
+        "marking_count": "重复加工次数",
+        "depth_um": "mean_depth_um",
+        "roughness_um": "Sa_um",
+        "sq_um": "Sq_um",
+        "sz_um": "Sz_um",
+        "min_depth_um": "min_depth_um",
+        "max_depth_um": "max_depth_um",
+    }
+    for index, row in frame.iterrows():
+        raw_record = {
+            str(key): _clean_raw_value(value)
+            for key, value in row.items()
+            if not str(key).startswith("Unnamed")
+        }
+        if not any(value is not None for value in raw_record.values()):
+            continue
+        record: dict[str, Any] = {
+            # Do not use 序号: CFRP has repeated values and a textual addition row.
+            "case_id": f"{path.stem}:{int(index) + 2}",
+            "material": spec["material"],
+            "process_type": "超快激光微加工",
+            "source_file": path.name,
+            "source_row": int(index) + 2,
+            "raw_record": json.dumps(raw_record, ensure_ascii=False),
+        }
+        for column in PARAMETER_COLUMNS + QUALITY_COLUMNS:
+            record[column] = parse_number(_row_value(row, fields.get(column)))
+        spacing_mm = parse_number(_row_value(row, "间距mm"))
+        record["fill_spacing_um"] = spacing_mm * 1000.0 if spacing_mm is not None else None
+        flags = [f"{column}:negative_audit_only" for column in DEPTH_COLUMNS if (value := record.get(column)) is not None and value < 0]
+        record["quality_flags"] = flags
+        records.append(record)
+    return records
+
+
 def _read_feedback_records() -> list[dict[str, Any]]:
     settings = get_settings()
     path = settings.feedback_jsonl
@@ -210,9 +276,11 @@ def load_dataset() -> pd.DataFrame:
     records: list[dict[str, Any]] = []
     for path in sorted(settings.raw_data_dir.glob("*.xlsx")):
         records.extend(_read_excel_records(path))
+    for path in sorted(settings.raw_data_dir.glob("*.csv")):
+        records.extend(_read_csv_records(path))
     records.extend(_read_feedback_records())
 
-    columns = BASE_COLUMNS + PARAMETER_COLUMNS + QUALITY_COLUMNS + ["raw_record"]
+    columns = BASE_COLUMNS + PARAMETER_COLUMNS + QUALITY_COLUMNS + ["quality_flags", "raw_record"]
     if not records:
         return pd.DataFrame(columns=columns)
     return pd.DataFrame(records, columns=columns)
@@ -221,7 +289,7 @@ def load_dataset() -> pd.DataFrame:
 def dataset_summary() -> dict[str, Any]:
     settings = get_settings()
     frame = load_dataset()
-    raw_files = sorted(path.name for path in settings.raw_data_dir.glob("*.xlsx"))
+    raw_files = sorted(path.name for path in settings.raw_data_dir.glob("*.xlsx")) + sorted(path.name for path in settings.raw_data_dir.glob("*.csv"))
     feedback_samples = int((frame["source_file"] == "feedback.jsonl").sum()) if not frame.empty else 0
 
     materials: list[dict[str, Any]] = []

@@ -102,6 +102,9 @@ function SimilarCases({ cases }: { cases: Recommendation["similar_cases"] }) {
             <div>
               <h5 className="text-xs font-medium text-gray-600 mb-1.5">案例质量</h5>
               <MetricGrid values={item.quality} />
+              {item.quality_flags.length > 0 && (
+                <p className="mt-2 text-xs text-amber-700">存在负深度审计值，未参与推荐计算。</p>
+              )}
             </div>
           </div>
         </details>
@@ -118,6 +121,7 @@ type Props = {
 
 export function RecommendationCard({ recommendation: rec, isSelected, onSelect }: Props) {
   const isML = rec.generation_method === "ml_regression_fit";
+  const isDiagnosticOnly = rec.execution_eligibility !== "reviewable";
   const scorePercent = Math.round(rec.score * 100);
   const algoLabel = rec.algorithm ?? (isML ? "机器学习" : "历史案例");
 
@@ -143,19 +147,28 @@ export function RecommendationCard({ recommendation: rec, isSelected, onSelect }
             {isML && rec.model_name && (
               <span className="text-xs text-gray-400">{rec.model_name}</span>
             )}
+            {isDiagnosticOnly && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                实验性分析候选
+              </span>
+            )}
           </div>
           <p className="text-xs text-gray-500 line-clamp-2">{rec.rationale}</p>
         </div>
 
         <button
           onClick={onSelect}
+          disabled={isDiagnosticOnly}
+          title={isDiagnosticOnly ? "尚未完成设备步长、联合可达性和前瞻加工验证" : undefined}
           className={`shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            isSelected
+            isDiagnosticOnly
+              ? "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed"
+              : isSelected
               ? "bg-primary text-white shadow-sm"
               : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
           }`}
         >
-          {isSelected ? "已选择" : "选择"}
+          {isDiagnosticOnly ? "仅供分析" : isSelected ? "已选择" : "选择"}
         </button>
       </div>
 

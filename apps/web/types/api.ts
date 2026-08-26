@@ -21,6 +21,7 @@ export type CaseMatch = {
   parameters: Record<string, number>;
   intermediate_metrics: Record<string, number>;
   quality: Record<string, number>;
+  quality_flags: string[];
   score: number;
 };
 
@@ -37,6 +38,8 @@ export type ModelInfo = {
 export type Recommendation = {
   rank: number;
   generation_method: string;
+  candidate_source: "historical" | "interpolated" | "perturbed";
+  execution_eligibility: "reviewable" | "diagnostic_only" | "forbidden";
   model_name: string | null;
   algorithm: string | null;
   parameters: Record<string, number>;
@@ -79,6 +82,11 @@ export type ExperimentData = {
   depth_um: number | null;
   diameter_um: number | null;
   roughness_um: number | null;
+  sq_um: number | null;
+  sz_um: number | null;
+  min_depth_um: number | null;
+  max_depth_um: number | null;
+  quality_flags: string[];
   is_active: boolean;
   data_source: string;
   note: string | null;

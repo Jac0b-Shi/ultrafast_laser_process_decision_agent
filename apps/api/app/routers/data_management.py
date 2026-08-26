@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import threading
 from pathlib import Path
 
@@ -109,9 +110,18 @@ def get_experiment_data(material: str):
             "depth_um": row.get("depth_um"),
             "diameter_um": row.get("diameter_um"),
             "roughness_um": row.get("roughness_um"),
+            "sq_um": row.get("sq_um"),
+            "sz_um": row.get("sz_um"),
+            "min_depth_um": row.get("min_depth_um"),
+            "max_depth_um": row.get("max_depth_um"),
+            "quality_flags": row.get("quality_flags") if isinstance(row.get("quality_flags"), list) else [],
             "is_active": True,
             "data_source": "system" if row.get("source_file") != "feedback.jsonl" else "feedback",
             "note": None,
+        }
+        record = {
+            key: None if isinstance(value, float) and math.isnan(value) else value
+            for key, value in record.items()
         }
         records.append(record)
 

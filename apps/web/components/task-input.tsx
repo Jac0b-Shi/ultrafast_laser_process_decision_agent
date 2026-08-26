@@ -8,6 +8,10 @@ type FormState = {
   targetDepth: string;
   targetDiameter: string;
   maxRoughness: string;
+  targetMinDepth: string;
+  targetMaxDepth: string;
+  maxSq: string;
+  maxSz: string;
   topK: string;
   algorithm: string;
 };
@@ -16,6 +20,7 @@ type Props = {
   form: FormState;
   materials: MaterialSummary[];
   diameterAvailable: boolean;
+  qualityMetrics: string[];
   loading: boolean;
   error: string;
   message: string;
@@ -29,6 +34,7 @@ export function TaskInput({
   form,
   materials,
   diameterAvailable,
+  qualityMetrics,
   loading,
   error,
   message,
@@ -108,6 +114,31 @@ export function TaskInput({
             className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
           />
         </div>
+
+        {[
+          { key: "targetMinDepth" as const, metric: "min_depth_um", label: "目标最小深度", placeholder: "例如 10" },
+          { key: "targetMaxDepth" as const, metric: "max_depth_um", label: "目标最大深度", placeholder: "例如 50" },
+          { key: "maxSq" as const, metric: "sq_um", label: "Sq 上限", placeholder: "留空则不限制" },
+          { key: "maxSz" as const, metric: "sz_um", label: "Sz 上限", placeholder: "留空则不限制" },
+        ].map((field) => {
+          const available = qualityMetrics.includes(field.metric);
+          return (
+            <div key={field.key}>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">
+                {field.label} <span className="text-gray-400">(μm)</span>
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={form[field.key]}
+                disabled={!available}
+                placeholder={available ? field.placeholder : "当前材料暂无该指标"}
+                onChange={(e) => onChangeField(field.key, e.target.value)}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+              />
+            </div>
+          );
+        })}
 
         {/* algorithm selector */}
         <div>
