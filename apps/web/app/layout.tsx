@@ -4,7 +4,7 @@ import "katex/dist/katex.min.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "超快激光工艺决策智能体",
+  title: "超快激光加工工艺数据库智能体",
   description: "超快激光加工参数推荐与反馈闭环 MVP",
   formatDetection: {
     telephone: false,

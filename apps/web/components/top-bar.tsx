@@ -21,7 +21,7 @@ export function TopBar({ summary, modelInfo, onRefresh, currentPage, onPageChang
           </div>
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-gray-900 truncate">
-              超快激光工艺决策智能体
+              超快激光加工工艺数据库智能体
             </h1>
             <p className="text-xs text-gray-500 truncate">
               基于实验数据的参数推荐与反馈闭环
