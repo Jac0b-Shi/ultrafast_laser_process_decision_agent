@@ -24,6 +24,10 @@ pnpm-debug.log*
 !.env.example
 
 # Runtime outputs
+experiments/agent/
+data/uploads/
+*.sqlite3-wal
+*.sqlite3-shm
 .runtime-state/
 data/raw/*
 !data/raw/.gitkeep
@@ -71,3 +75,5 @@ Thumbs.db
 # Shared IDE run entries
 !.run/
 !.run/*.run.xml
+
+*.key
