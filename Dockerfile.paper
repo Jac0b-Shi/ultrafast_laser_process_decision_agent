@@ -1,0 +1,7 @@
+FROM ghcr.io/typst/typst@sha256:032e292249bcd378480cc7c142cfa324b63ef8aadeb88d7e7230320c4c9c422f AS compiler
+FROM pandoc/core@sha256:8d7467e8ee40b0365a344c3d41067d6d2349da52e9961e4229f331094806fb14
+USER root
+RUN apk add --no-cache python3
+COPY --from=compiler /bin/typst /usr/local/bin/typst
+WORKDIR /workspace
+ENTRYPOINT ["python3", "/workspace/scripts/build_journal_pdf.py"]

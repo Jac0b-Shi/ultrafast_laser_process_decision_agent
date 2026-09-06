@@ -1,0 +1,8 @@
+"use client";
+import { metricLabel } from "@/lib/metric-display";
+type Spec={value?:number;tolerance?:number;unit:string;operator:string};
+export default function ExtraTargets({metrics,primary,value,onChange}:{metrics:string[];primary:string;value:string;onChange:(s:string)=>void}){
+ const fields:Record<string,Spec>=JSON.parse(value);
+ function update(key:string,field:string,text:string){const next={...fields,[key]:{...fields[key],[field]:field==="operator"?text:text===""?undefined:Number(text)}};onChange(JSON.stringify(next));}
+ return <div className="space-y-3">{Object.entries(fields).map(([key,spec])=><div key={key} className="grid grid-cols-4 gap-2"><span className="text-xs">{metricLabel(key)}<button type="button" className="block underline" onClick={()=>{const next={...fields};delete next[key];onChange(JSON.stringify(next));}}>移除</button></span><select className="border rounded-lg text-xs" value={spec.operator} onChange={e=>update(key,"operator",e.target.value)}><option value="eq">接近目标</option><option value="le">不超过</option><option value="ge">不低于</option></select>{["value","tolerance"].map(field=><label key={field} className="text-xs">{field==="value"?"目标":"容差"} / μm<input className="w-full border rounded-lg p-2" type="number" min="0" step="any" required value={spec[field as "value"|"tolerance"]??""} onChange={e=>update(key,field,e.target.value)}/></label>)}</div>)}<select aria-label="添加质量目标" value="" className="text-sm border rounded-lg p-2" onChange={e=>onChange(JSON.stringify({...fields,[e.target.value]:{operator:"le",unit:"um"}}))}><option value="" disabled>＋ 添加质量目标</option>{metrics.filter(m=>m!==primary&&!(m in fields)).map(m=><option key={m} value={m}>{metricLabel(m)}</option>)}</select></div>;
+}

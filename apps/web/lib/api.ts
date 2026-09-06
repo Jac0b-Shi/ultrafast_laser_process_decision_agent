@@ -10,6 +10,9 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   });
 
   if (!response.ok) {
+    if (response.status === 401 && !path.endsWith('/login') && !path.endsWith('/me')) {
+      window.location.reload();
+    }
     const body = await response.text();
     if (body) {
       const contentType = response.headers.get("content-type") ?? "";

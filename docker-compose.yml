@@ -9,13 +9,16 @@ services:
       LASER_DATA_DIR: /workspace/data
       LASER_EXPERIMENTS_DIR: /workspace/experiments
       LASER_CONFIG_DIR: /workspace/configs
-      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      PROJECT_ROOT: /workspace
+      LASER_ADMIN_USERNAME: ${LASER_ADMIN_USERNAME:-}
+      LASER_ADMIN_PASSWORD: ${LASER_ADMIN_PASSWORD:-}
+      LASER_COOKIE_SECURE: ${LASER_COOKIE_SECURE:-false}
       CORS_ORIGINS: http://localhost:${WEB_PORT:-3000},http://127.0.0.1:${WEB_PORT:-3000},https://laser.jac0bshi.cn
     volumes:
       - ./data:/workspace/data
       - ./experiments:/workspace/experiments
       - ./configs:/workspace/configs:ro
+      - ./docs/literature:/workspace/docs/literature:ro
     ports:
       - "${API_PORT:-8000}:8000"
 
@@ -24,9 +27,17 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
     environment:
-      API_INTERNAL_URL: ${API_INTERNAL_URL:-http://api:8000}
+      API_INTERNAL_URL: http://api:8000
       NEXT_PUBLIC_API_BASE_URL: ""
     ports:
       - "${WEB_PORT:-3000}:3000"
     depends_on:
       - api
+
+  paper:
+    profiles: [paper]
+    build:
+      context: .
+      dockerfile: Dockerfile.paper
+    volumes:
+      - .:/workspace

@@ -1,0 +1,12 @@
+{
+  "seed": 42,
+  "test_fraction": 0.2,
+  "minimum_samples": 20,
+  "minimum_groups": 8,
+  "targets": ["depth_um", "roughness_um", "diameter_um"],
+  "modes": ["raw", "geometry", "thermal", "fusion"],
+  "simple_models": ["linear_regression", "ridge", "elasticnet", "bayesian_ridge", "huber"],
+  "complex_models": ["knn", "svr", "decision_tree", "random_forest", "extra_trees", "gradient_boosting", "hist_gradient_boosting", "gaussian_process", "neural_network"],
+  "selection_budget_seconds": 120,
+  "feedback_fractions": [0.5, 0.75, 1.0]
+}
