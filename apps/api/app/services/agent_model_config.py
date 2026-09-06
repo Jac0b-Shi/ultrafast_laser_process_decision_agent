@@ -18,7 +18,7 @@ def cipher():
     path.parent.mkdir(parents=True,exist_ok=True)
     if not path.exists():
         with store.database() as conn:
-            if conn.execute("SELECT 1 FROM models WHERE secret IS NOT NULL LIMIT 1").fetchone():
+            if conn.execute("SELECT 1 FROM models WHERE secret IS NOT NULL LIMIT 1").fetchone() or conn.execute("SELECT 1 FROM settings WHERE key='email_secret'").fetchone():
                 raise HTTPException(503,'模型密钥文件缺失，请从配套备份恢复')
         try:
             with path.open('xb') as f:f.write(Fernet.generate_key())
