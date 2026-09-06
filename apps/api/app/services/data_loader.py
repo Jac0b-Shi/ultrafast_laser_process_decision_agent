@@ -122,7 +122,7 @@ def parse_number(value: Any) -> float | None:
     if isinstance(value, float) and math.isnan(value):
         return None
     if isinstance(value, numbers.Real):
-        return float(value)
+        return float(value) if math.isfinite(float(value)) else None
 
     text = str(value).strip()
     if not text:
@@ -131,8 +131,10 @@ def parse_number(value: Any) -> float | None:
         return None
     if "接近0" in text:
         return 0.0
+    if text.startswith(("<", "＜", "≤", ">", "＞", "≥")):
+        return None
 
-    match = re.search(r"-?\d+(?:\.\d+)?", text)
+    match = re.search(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?", text)
     if not match:
         return None
     return float(match.group(0))
@@ -182,8 +184,16 @@ def _read_excel_records(path: Path) -> list[dict[str, Any]]:
             "raw_record": json.dumps(raw_record, ensure_ascii=False),
         }
 
+        flags = []
         for column in PARAMETER_COLUMNS + QUALITY_COLUMNS:
-            record[column] = parse_number(_row_value(row, fields.get(column)))
+            raw = _row_value(row, fields.get(column))
+            record[column] = parse_number(raw)
+            text = str(raw).strip()
+            if text.startswith(("<", "＜", "≤", ">", "＞", "≥")):
+                flags.append(f"{column}:censored:{text}")
+            elif "接近0" in text:
+                flags.append(f"{column}:near_zero")
+        record["quality_flags"] = flags
 
         records.append(record)
 
@@ -271,14 +281,15 @@ def _read_feedback_records() -> list[dict[str, Any]]:
     return records
 
 
-def load_dataset() -> pd.DataFrame:
+def load_dataset(include_legacy_feedback: bool = False) -> pd.DataFrame:
     settings = get_settings()
     records: list[dict[str, Any]] = []
     for path in sorted(settings.raw_data_dir.glob("*.xlsx")):
         records.extend(_read_excel_records(path))
     for path in sorted(settings.raw_data_dir.glob("*.csv")):
         records.extend(_read_csv_records(path))
-    records.extend(_read_feedback_records())
+    if include_legacy_feedback:
+        records.extend(_read_feedback_records())
 
     columns = BASE_COLUMNS + PARAMETER_COLUMNS + QUALITY_COLUMNS + ["quality_flags", "raw_record"]
     if not records:
