@@ -16,8 +16,9 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /service
 
 COPY apps/api/pyproject.toml ./pyproject.toml
+COPY apps/api/requirements.lock.txt ./requirements.lock.txt
 RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir . "pytest>=8.0.0" "httpx>=0.27.0"
+    && python -m pip install --no-cache-dir -c requirements.lock.txt . "pytest>=8.0.0" "httpx>=0.27.0"
 
 COPY apps/api/app ./app
 COPY apps/api/tests ./tests
@@ -25,4 +26,3 @@ COPY apps/api/tests ./tests
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-
