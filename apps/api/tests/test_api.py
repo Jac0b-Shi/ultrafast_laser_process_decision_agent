@@ -29,6 +29,13 @@ def test_dataset_summary(client):
 def test_legacy_recommendation_requires_login():
     assert TestClient(app).post('/api/recommendations',json={'material':'BF33'}).status_code==401
 
+def test_public_comparison_is_anonymous_and_read_only():
+    frame=load_dataset()
+    row=frame.loc[(frame.material=='BF33') & (frame.depth_um>0)].iloc[0]
+    response=TestClient(app).post('/api/recommendations/public',json={'material':'BF33','target_depth_um':float(row.depth_um),'top_k':3})
+    assert response.status_code==200,response.text
+    assert response.json()['recommendations'][0]['candidate_source']=='historical'
+
 def test_legacy_recommendation_single_historical(client):
     frame=load_dataset()
     row=frame.loc[(frame.material=='BF33') & (frame.depth_um>0)].iloc[0]
