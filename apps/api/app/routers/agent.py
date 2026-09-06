@@ -46,7 +46,7 @@ class Credentials(BaseModel):
 
 class Registration(BaseModel):
     username: str = Field(min_length=1,max_length=80)
-    email: str = Field(max_length=254)
+    email: str = Field(min_length=3,max_length=254)
     password: str = Field(min_length=12,max_length=256)
 
 
@@ -134,9 +134,9 @@ def login(body: Credentials, response: Response):
 
 
 @router.post("/register")
-def register(body: Registration):
+def register(body: Registration, request: Request):
     from app.services.email_registration import register as create_registration
-    return create_registration(body.username,body.email,body.password)
+    return create_registration(body.username,body.email,body.password,request)
 
 
 @router.post("/register/verify")

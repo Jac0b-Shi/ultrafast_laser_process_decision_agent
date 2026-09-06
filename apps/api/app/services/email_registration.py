@@ -124,48 +124,50 @@ def send_test(recipient):
     _send(recipient, "超快激光智能体邮件配置测试", "这是一封 SMTP 配置测试邮件。收到此邮件表示发信配置可用。")
 
 
-def register(username, email, password):
+def register(username, email, password, request):
+    from app.services import rate_limit
     cfg = config()
     if not cfg["enabled"]:
         raise HTTPException(503, "邮箱注册暂未开放")
     username = username.strip()
     email = store.normalize_email(email)
+    if not email:
+        raise HTTPException(422, "请填写有效邮箱")
     if not 1 <= len(username) <= 80 or not 12 <= len(password) <= 256:
         raise HTTPException(422, "用户名不能为空，密码须为 12–256 字符")
+    rate_limit.consume("registration.ip", rate_limit.client_key(request), ((3600,10),(86400,30)))
     instant = store.now()
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode()).hexdigest()
-    should_send = True
     registration_id = str(uuid4())
+    generic = {"ok": True, "message": "如果信息可用于注册，验证邮件将很快送达。"}
     with store.database() as conn:
         conn.execute("BEGIN IMMEDIATE")
         conn.execute("DELETE FROM registrations WHERE verified IS NULL AND expires<=?", (instant.isoformat(),))
         if conn.execute("SELECT 1 FROM users WHERE username=? OR email=?", (username, email)).fetchone():
-            should_send = False
+            return generic
         matches = conn.execute("SELECT * FROM registrations WHERE verified IS NULL AND (username=? OR email=?) ORDER BY created DESC", (username, email)).fetchall()
         if len(matches) > 1:
-            should_send = False
+            return generic
         prior = matches[0] if len(matches) == 1 else None
         if prior:
             last_sent = datetime.fromisoformat(prior["last_sent"])
             created = datetime.fromisoformat(prior["created"])
             if instant-last_sent < timedelta(seconds=60) or (instant-created < timedelta(hours=1) and prior["send_count"] >= 3):
-                should_send = False
-            else:
-                registration_id = prior["id"]
-                count = prior["send_count"] + 1 if instant-created < timedelta(hours=1) else 1
-                conn.execute("UPDATE registrations SET username=?,email=?,password=?,token_hash=?,expires=?,created=?,last_sent=?,send_count=? WHERE id=?", (username,email,store.password_hash(password),token_hash,(instant+timedelta(minutes=cfg["verification_ttl_minutes"])).isoformat(),created.isoformat() if count>1 else instant.isoformat(),instant.isoformat(),count,registration_id))
-        elif should_send:
+                return generic
+            registration_id = prior["id"]
+            count = prior["send_count"] + 1 if instant-created < timedelta(hours=1) else 1
+            conn.execute("UPDATE registrations SET username=?,email=?,password=?,token_hash=?,expires=?,created=?,last_sent=?,send_count=? WHERE id=?", (username,email,store.password_hash(password),token_hash,(instant+timedelta(minutes=cfg["verification_ttl_minutes"])).isoformat(),created.isoformat() if count>1 else instant.isoformat(),instant.isoformat(),count,registration_id))
+        else:
             conn.execute("INSERT INTO registrations VALUES(?,?,?,?,?,?,?,?,?,NULL)", (registration_id,username,email,store.password_hash(password),token_hash,(instant+timedelta(minutes=cfg["verification_ttl_minutes"])).isoformat(),instant.isoformat(),instant.isoformat(),1))
-    if should_send:
-        try:
-            link = f'{cfg["public_base_url"]}/verify?token={token}'
-            _send(email, "验证你的超快激光智能体账号", f"你好，{username}：\n\n请打开以下链接完成邮箱验证：\n{link}\n\n链接将在 {cfg['verification_ttl_minutes']} 分钟后失效。若不是你本人操作，请忽略此邮件。")
-        except Exception:
-            with store.database() as conn:
-                conn.execute("DELETE FROM registrations WHERE id=? AND token_hash=?", (registration_id, token_hash))
-            raise
-    return {"ok": True, "message": "如果信息可用于注册，验证邮件将很快送达。"}
+    try:
+        link = f'{cfg["public_base_url"]}/verify?token={token}'
+        _send(email, "验证你的超快激光智能体账号", f"你好，{username}：\n\n请打开以下链接完成邮箱验证：\n{link}\n\n链接将在 {cfg['verification_ttl_minutes']} 分钟后失效。若不是你本人操作，请忽略此邮件。")
+    except Exception:
+        with store.database() as conn:
+            conn.execute("DELETE FROM registrations WHERE id=? AND token_hash=?", (registration_id, token_hash))
+        raise
+    return generic
 
 
 def verify(token):
