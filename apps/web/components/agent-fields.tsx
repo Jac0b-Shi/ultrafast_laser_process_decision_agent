@@ -1,0 +1,12 @@
+"use client";
+import { metricLabel } from "@/lib/metric-display";
+export function Measurements({metrics,value,onChange}:{metrics:string[];value:string;onChange:(s:string)=>void}){
+ let fields:Record<string,number>={};try{fields=JSON.parse(value||"{}");}catch{}
+ return <div className="grid grid-cols-2 gap-3 mt-2">{metrics.map(key=><label key={key} className="text-xs">{metricLabel(key)}<input type="number" min={key==="defocus_amount_mm"?undefined:0} step="any" className="border rounded-lg p-2 w-full mt-1" value={fields[key]??""} onChange={e=>{const next={...fields};if(e.target.value==="")delete next[key];else next[key]=Number(e.target.value);onChange(Object.keys(next).length?JSON.stringify(next):"");}}/></label>)}</div>;
+}
+const PARAMETERS:Record<string,string>={scan_speed_mm_s:"扫描速度 / mm/s",repetition_frequency_khz:"重复频率 / kHz",pulse_width_fs:"脉冲宽度 / fs",fill_spacing_um:"填充间距 / μm",marking_count:"加工次数",defocus_amount_mm:"离焦量 / mm",pulse_energy_mj:"脉冲能量 / mJ",processing_time_s:"加工时间 / s",laser_energy_percent:"激光能量 / %",average_power_w:"平均功率 / W",scan_interval_um:"扫描间隔 / μm"};
+export function DeviceConstraints({value,onChange}:{value:string;onChange:(s:string)=>void}){
+ let fields:Record<string,Record<string,number>>={};try{fields=JSON.parse(value);}catch{}
+ function change(key:string,bound:string,text:string){const next={...fields,[key]:{...fields[key]}};if(text==="")delete next[key][bound];else next[key][bound]=Number(text);onChange(JSON.stringify(next));}
+ return <div className="space-y-3"><p className="text-xs text-stone-500">生成新参数时，请填写设备允许的范围与步长。</p>{Object.entries(fields).map(([key,bounds])=><div key={key} className="grid grid-cols-4 gap-2 items-end"><span className="text-xs">{PARAMETERS[key]??key}<button type="button" className="block underline" onClick={()=>{const next={...fields};delete next[key];onChange(JSON.stringify(next));}}>移除</button></span>{[["min","下限"],["max","上限"],["step","步长"]].map(([b,label])=><label key={b} className="text-xs">{label}<input className="w-full border rounded-lg p-2" type="number" step="any" value={bounds[b]??""} onChange={e=>change(key,b,e.target.value)}/></label>)}</div>)}<select aria-label="添加设备约束" className="border rounded-lg p-2 text-sm" value="" onChange={e=>onChange(JSON.stringify({...fields,[e.target.value]:{}}))}><option value="" disabled>＋ 添加设备参数约束</option>{Object.entries(PARAMETERS).filter(([k])=>!(k in fields)).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>;
+}
