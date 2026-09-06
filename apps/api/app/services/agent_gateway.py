@@ -8,12 +8,46 @@ from app.services import agent_billing as billing
 from app.services import agent_model_config as models
 
 
+def _input_bound(message_payload,model):
+    """Reserve conservatively without treating base64 image bytes as text tokens."""
+    image_count=0
+    sanitized=[]
+    for message in message_payload:
+        copy=dict(message)
+        content=copy.get('content')
+        if isinstance(content,list):
+            parts=[]
+            for part in content:
+                if isinstance(part,dict) and part.get('type')=='image_url':
+                    image_count+=1
+                    parts.append({'type':'image_url','image_url':{'url':'data:image/validated;base64,'}})
+                else:parts.append(part)
+            copy['content']=parts
+        sanitized.append(copy)
+    return len(json.dumps(sanitized,ensure_ascii=False).encode())+128+image_count*8192
+
+
+def _ollama_messages(message_payload):
+    converted=[]
+    for message in message_payload:
+        copy=dict(message);content=copy.get('content')
+        if isinstance(content,list):
+            copy['content']='\n'.join(str(part.get('text','')) for part in content if isinstance(part,dict) and part.get('type')=='text')
+            copy['images']=[part['image_url']['url'].split(',',1)[1] for part in content if isinstance(part,dict) and part.get('type')=='image_url']
+        converted.append(copy)
+    return converted
+
+
 def invoke(owner,purpose,key,message_payload,model_id=None,platform=False):
     billing.recover()
+    has_images=any(isinstance(message.get('content'),list) and any(isinstance(part,dict) and part.get('type')=='image_url' for part in message['content']) for message in message_payload)
     model=models.resolve(model_id,platform)
-    if not model:return {'disabled':True}
+    if not model:
+        if has_images:raise HTTPException(422,'图片需要选择支持图片的外部模型')
+        return {'disabled':True}
+    if has_images and not model.get('supports_images',False):raise HTTPException(422,'所选模型未启用图片输入')
     fingerprint=hashlib.sha256(json.dumps({'payload':message_payload,'model_id':model_id},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
-    input_bound=len(json.dumps(message_payload,ensure_ascii=False).encode())+128
+    input_bound=_input_bound(message_payload,model)
     call=billing.begin(owner,purpose,key,fingerprint,model,input_bound,platform)
     if call.get('replay'):
         if call.get('result'):return {'replay':json.loads(call['result']),'call_id':call['id']}
@@ -22,7 +56,7 @@ def invoke(owner,purpose,key,message_payload,model_id=None,platform=False):
     headers={}
     payload={'model':model['model'],'messages':message_payload,'stream':True}
     if model['protocol']=='ollama':
-        payload.update({'format':'json','options':{'num_predict':budget}});endpoint='/api/chat'
+        payload.update({'messages':_ollama_messages(message_payload),'format':'json','options':{'num_predict':budget}});endpoint='/api/chat'
     else:
         payload.update({'max_tokens':budget,'stream_options':{'include_usage':True}});endpoint='/chat/completions'
     chunks=[];usage=None;started=time.monotonic();completed=False;output_bytes=0

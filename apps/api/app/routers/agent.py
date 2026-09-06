@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import base64
+import binascii
 import math
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, File
 from pydantic import BaseModel, Field
 from app.services import agent_store as store
@@ -42,18 +44,44 @@ class Credentials(BaseModel):
     password: str = Field(max_length=256)
 
 
+class ImageAttachment(BaseModel):
+    name: str = Field(min_length=1,max_length=200)
+    media_type: Literal["image/jpeg","image/png","image/gif","image/webp"]
+    data: str = Field(min_length=1,max_length=14_000_000)
+
+
 class Message(BaseModel):
     message: str = Field(default="", max_length=6000)
     task: dict[str, Any] = Field(default_factory=dict)
     model_id: str | None = None
     request_key: str | None = Field(default=None,max_length=100)
+    images: list[ImageAttachment] = Field(default_factory=list,max_length=4)
+
+
+def image_parts(images: list[ImageAttachment]):
+    parts=[];total=0
+    signatures={
+        "image/jpeg":lambda raw:raw.startswith(b"\xff\xd8\xff"),
+        "image/png":lambda raw:raw.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/gif":lambda raw:raw.startswith((b"GIF87a",b"GIF89a")),
+        "image/webp":lambda raw:len(raw)>=12 and raw.startswith(b"RIFF") and raw[8:12]==b"WEBP",
+    }
+    for image in images:
+        try:raw=base64.b64decode(image.data,validate=True)
+        except (binascii.Error,ValueError):raise HTTPException(422,"图片数据不是有效的 Base64")
+        if not raw or len(raw)>10*1024*1024:raise HTTPException(413,"单张图片不能超过 10 MB")
+        total+=len(raw)
+        if total>20*1024*1024:raise HTTPException(413,"图片总大小不能超过 20 MB")
+        if not signatures[image.media_type](raw):raise HTTPException(422,"图片内容与声明格式不一致")
+        parts.append({"type":"image_url","image_url":{"url":f"data:{image.media_type};base64,{image.data}"}})
+    return parts
 
 
 @router.post("/interpret")
 def interpret(body: Message, user=Depends(store.current_user)):
-    if not body.message.strip():
-        raise HTTPException(422, "请先描述加工目标")
-    result = orchestrate(body.message, {}, [], purpose="interpret",owner=user['id'],request_key=body.request_key,model_id=body.model_id)
+    if not body.message.strip() and not body.images:
+        raise HTTPException(422, "请先描述加工目标或上传图片")
+    result = orchestrate(body.message, {}, [], purpose="interpret",owner=user['id'],request_key=body.request_key,model_id=body.model_id,images=image_parts(body.images))
     if 'operation_result' in result:return result['operation_result']
     draft = result.get("draft")
     if not isinstance(draft, dict):
@@ -69,7 +97,7 @@ def extract_relation(body: Message, user=Depends(store.administrator)):
     if material not in set(dataset(user["id"]).material):
         raise HTTPException(422, "请选择有数据支持的材料")
     citations = search("public", body.message)
-    result = orchestrate(body.message, {"fields": PARAMETER_COLUMNS, "materials": [material]}, citations, purpose="relations",owner=user["id"],request_key=body.request_key,model_id=body.model_id,platform=True)
+    result = orchestrate(body.message, {"fields": PARAMETER_COLUMNS, "materials": [material]}, citations, purpose="relations",owner=user["id"],request_key=body.request_key,model_id=body.model_id,platform=True,images=image_parts(body.images))
     if "operation_result" in result:return result["operation_result"]
     try:
         proposal = result.get("proposal")
@@ -147,7 +175,7 @@ def message(entity: str, body: Message, user=Depends(store.current_user)):
     result = decide(user['id'],task,history_only=True)
     provider = {"status":"disabled","message":"历史优先／本地确定性推荐，不产生模型费用","candidates":[]}
     if result is None:
-        provider = orchestrate(body.message,selection_context,citations,owner=user['id'],request_key=body.request_key,model_id=body.model_id)
+        provider = orchestrate(body.message,selection_context,citations,owner=user['id'],request_key=body.request_key,model_id=body.model_id,images=image_parts(body.images))
         if 'operation_result' in provider:return provider['operation_result']
     try:
         if result is None:result=decide(user['id'],task,provider.get('candidates'))
