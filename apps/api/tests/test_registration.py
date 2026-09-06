@@ -48,3 +48,18 @@ def test_registration_disabled_by_default(tmp_path, monkeypatch):
     response = client.post("/api/agent/register", json={"username":"new-user","email":"new@example.com","password":"new-user-password"})
     assert response.status_code == 503
     get_settings.cache_clear()
+
+
+def test_empty_registration_email_is_validation_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("LASER_EXPERIMENTS_DIR", str(tmp_path))
+    monkeypatch.setenv("LASER_ADMIN_USERNAME", "admin")
+    monkeypatch.setenv("LASER_ADMIN_PASSWORD", "admin-password-123")
+    get_settings.cache_clear()
+    client = TestClient(create_app())
+    assert client.post("/api/agent/login", json={"username":"admin","password":"admin-password-123"}).status_code == 200
+    config={"enabled":True,"host":"smtp.example.com","port":465,"security":"ssl","username":"sender@example.com","sender_email":"sender@example.com","sender_name":"Laser","public_base_url":"https://laser.example.com","verification_ttl_minutes":30,"password":"secret"}
+    assert client.put("/api/agent/admin/email",json=config).status_code == 200
+    client.post("/api/agent/logout")
+    response=client.post("/api/agent/register",json={"username":"new-user","email":"","password":"new-user-password"})
+    assert response.status_code == 422
+    get_settings.cache_clear()

@@ -37,6 +37,9 @@ def migrate(conn, path):
                 '''CREATE TABLE IF NOT EXISTS registrations(id TEXT PRIMARY KEY,username TEXT NOT NULL,email TEXT NOT NULL,password TEXT NOT NULL,token_hash TEXT UNIQUE NOT NULL,expires TEXT NOT NULL,created TEXT NOT NULL,last_sent TEXT NOT NULL,send_count INTEGER NOT NULL DEFAULT 1,verified TEXT)''',
                 'CREATE UNIQUE INDEX IF NOT EXISTS pending_username ON registrations(username) WHERE verified IS NULL',
                 'CREATE UNIQUE INDEX IF NOT EXISTS pending_email ON registrations(email) WHERE verified IS NULL',
+                '''CREATE TABLE IF NOT EXISTS rate_events(id INTEGER PRIMARY KEY AUTOINCREMENT,scope TEXT NOT NULL,key_hash TEXT NOT NULL,created TEXT NOT NULL)''',
+                'CREATE INDEX IF NOT EXISTS rate_events_lookup ON rate_events(scope,key_hash,created)',
+                '''CREATE TABLE IF NOT EXISTS work_leases(name TEXT NOT NULL,slot INTEGER NOT NULL,owner TEXT NOT NULL,expires TEXT NOT NULL,PRIMARY KEY(name,slot))''',
             ]
             for sql in statements:conn.execute(sql)
             conn.execute('PRAGMA user_version=3');conn.commit()

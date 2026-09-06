@@ -19,6 +19,12 @@ def client(tmp_path, monkeypatch):
 def test_health(client):
     assert client.get('/health').json()['status'] == 'ok'
 
+def test_site_config_comes_from_runtime_environment(client,monkeypatch):
+    monkeypatch.setenv('LASER_ICP_NUMBER','test-icp')
+    monkeypatch.setenv('LASER_POLICE_NUMBER','test-police')
+    payload=client.get('/api/site-config').json()
+    assert payload['icp_number']=='test-icp' and payload['police_number']=='test-police'
+
 def test_dataset_summary(client):
     payload=client.get('/api/datasets/summary').json()
     materials={item['material']:item for item in payload['materials']}

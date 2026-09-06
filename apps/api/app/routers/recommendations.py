@@ -1,14 +1,13 @@
-import threading
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from app.services.agent_store import current_user
 from app.services.agent_decision import decide, dataset
 from app.services.agent_store import append
 
 from app.schemas import ModelInfo, RecommendationRequest, RecommendationResponse
 from app.services.recommender import MODEL_INFO, recommend_parameters
+from app.services import rate_limit
 
 router = APIRouter(prefix="/api/recommendations", tags=["recommendations"])
-public_slots = threading.BoundedSemaphore(2)
 AGENT_MODEL_INFO = MODEL_INFO.model_copy(update={"model_name": "knowledge_guided_grouped_selection", "model_version": "1.0.0", "model_type": "机理中间量 + 14 类算法注册表 + 分组验证选模 + 历史优先单组推荐", "training_scope": "公共原始数据与当前用户有效反馈；训练折内计算中间量和预处理。", "extrapolation_policy": "不跨材料回退，不忽略约束；无合格历史时要求设备步长与数据支持。"})
 
 
@@ -22,14 +21,16 @@ def create_recommendation(request: RecommendationRequest, user=Depends(current_u
 
 
 @router.post("/public", response_model=RecommendationResponse)
-def public_comparison(request: RecommendationRequest):
+def public_comparison(body: RecommendationRequest, request: Request):
     """Read-only legacy baseline over public data; never includes account feedback."""
-    if not public_slots.acquire(blocking=False):
+    owner = rate_limit.acquire("public-recommendation", 2)
+    if not owner:
         raise HTTPException(429, "免登录推荐繁忙，请稍后重试")
     try:
-        return recommend_parameters(request)
+        rate_limit.consume("public-recommendation.ip", rate_limit.client_key(request), ((600,20),(86400,100)))
+        return recommend_parameters(body)
     finally:
-        public_slots.release()
+        rate_limit.release("public-recommendation", owner)
 
 
 @router.get("/public/model-info", response_model=ModelInfo)
