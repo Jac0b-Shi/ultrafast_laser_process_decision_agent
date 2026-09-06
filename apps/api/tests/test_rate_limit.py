@@ -13,6 +13,8 @@ def test_forwarded_ip_only_from_configured_proxy(monkeypatch):
     monkeypatch.setenv("LASER_TRUSTED_PROXIES", "100.64.0.1")
     get_settings.cache_clear()
     assert rate_limit.client_key(request("100.64.0.1","203.0.113.8")) == "203.0.113.8"
+    assert rate_limit.client_key(request("100.64.0.1","1.2.3.4, 203.0.113.8")) == "203.0.113.8"
+    assert rate_limit.client_key(request("100.64.0.1","203.0.113.8, 100.64.0.1")) == "203.0.113.8"
     assert rate_limit.client_key(request("198.51.100.2","203.0.113.8")) == "198.51.100.2"
     get_settings.cache_clear()
 
