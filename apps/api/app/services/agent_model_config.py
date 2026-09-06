@@ -27,12 +27,12 @@ def cipher():
     return Fernet(path.read_bytes())
 
 def clean(body):
-    result={k:body[k] for k in ('name','protocol','base_url','model','enabled','visible','default','max_input','max_output','timeout','cost','sale') if k in body}
+    result={k:body[k] for k in ('name','protocol','base_url','model','enabled','visible','default','supports_images','max_input','max_output','timeout','cost','sale') if k in body}
     if result.get('protocol') not in ('chat_completions','ollama'):raise HTTPException(422,'未知模型协议')
     url=urlparse(result.get('base_url',''))
     if url.scheme not in ('http','https') or not url.hostname or url.username or url.password or url.query or url.fragment:raise HTTPException(422,'服务地址必须是无凭据的 HTTP(S) 地址')
     if not result.get('name') or not result.get('model'):raise HTTPException(422,'请填写显示名称和模型标识')
-    for k,lo,hi in [('max_input',1,2_000_000),('max_output',1,100_000),('timeout',1,120)]:
+    for k,lo,hi in [('max_input',1,2_000_000),('max_output',1,1_000_000),('timeout',1,600)]:
         if isinstance(result.get(k),bool) or not isinstance(result.get(k),int) or not lo<=result[k]<=hi:raise HTTPException(422,'模型限制超出有效范围')
     for kind in ('cost','sale'):
         values=result.get(kind,{})
@@ -43,7 +43,7 @@ def clean(body):
                 if not d.is_finite() or d<0 or d>1_000_000:raise ValueError()
             result[kind]={k:str(Decimal(str(values[k]))) for k in PRICE_KEYS}
         except Exception:raise HTTPException(422,'请填写三项有效非负单价')
-    for k in ('enabled','visible','default'):
+    for k in ('enabled','visible','default','supports_images'):
         if not isinstance(result.get(k,False),bool):raise HTTPException(422,'启停设置无效')
         result.setdefault(k,False)
     result['base_url']=result['base_url'].rstrip('/')
@@ -80,7 +80,7 @@ def import_legacy():
         entity='import-'+name
         with store.database() as conn:
             if conn.execute('SELECT 1 FROM models WHERE id=?',(entity,)).fetchone():continue
-        save({'name':name,'protocol':c['type'],'base_url':c['base_url'],'model':c.get('model',c.get('chat_model')),'enabled':bool(c.get('enabled',False)),'visible':True,'default':name==os.getenv('LASER_LLM_PROVIDER',data.get('default_provider')),'max_input':16384,'max_output':1024,'timeout':20,'cost':dict.fromkeys(PRICE_KEYS,'0'),'sale':dict.fromkeys(PRICE_KEYS,'0'),'api_key':os.getenv(c.get('api_key_env',''),'')},'migration',entity)
+        save({'name':name,'protocol':c['type'],'base_url':c['base_url'],'model':c.get('model',c.get('chat_model')),'enabled':bool(c.get('enabled',False)),'visible':True,'default':name==os.getenv('LASER_LLM_PROVIDER',data.get('default_provider')),'supports_images':False,'max_input':16384,'max_output':1024,'timeout':20,'cost':dict.fromkeys(PRICE_KEYS,'0'),'sale':dict.fromkeys(PRICE_KEYS,'0'),'api_key':os.getenv(c.get('api_key_env',''),'')},'migration',entity)
     with store.database() as conn:conn.execute("INSERT OR IGNORE INTO settings VALUES('provider_imported','true')")
 
 def listing(admin=False):
@@ -90,7 +90,8 @@ def listing(admin=False):
     for row in rows:
         c=json.loads(row['config'])
         if not admin and (not c['visible'] or not c['enabled']):continue
-        if not admin:c={k:c[k] for k in ('name','model','sale','default')}
+        c.setdefault('supports_images',False)
+        if not admin:c={k:c[k] for k in ('name','model','sale','default','supports_images')}
         result.append({**c,'id':row['id'],'version':row['version'],**({'has_key':bool(row['secret'])} if admin else {})})
     return result
 

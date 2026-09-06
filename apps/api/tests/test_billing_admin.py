@@ -1,4 +1,5 @@
 import json
+import base64
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from decimal import Decimal
@@ -61,6 +62,52 @@ def test_model_secrets_prices_and_usage(setup):
     assert u=={'cached':30,'uncached':70,'output':20}
     assert bill.price(config(),u,'cost')==Decimal('0.00023')
     assert bill.normalize_usage({'usage':{'prompt_tokens':100,'prompt_cache_hit_tokens':30,'prompt_cache_miss_tokens':90,'completion_tokens':2}},'chat_completions') is None
+    assert b.get('/api/agent/models').json()[0]['supports_images'] is False
+
+
+def test_model_limits_support_long_context_providers(setup):
+    a,_,_,_=setup
+    long_context=config()|{'max_input':1_024_000,'max_output':384_000,'timeout':200}
+    response=a.post('/api/agent/admin/models',json=long_context)
+    assert response.status_code==200,response.text
+    for field,value in [('max_input',2_000_001),('max_output',1_000_001),('timeout',601)]:
+        response=a.post('/api/agent/admin/models',json=long_context|{field:value})
+        assert response.status_code==422
+        assert response.json()['detail']=='模型限制超出有效范围'
+
+
+def test_multimodal_input_is_config_driven_and_validated(setup,monkeypatch):
+    from contextlib import contextmanager
+    from app.services import agent_gateway
+    a,b,owner,_=setup
+    model=a.post('/api/agent/admin/models',json=config()).json()['id']
+    image={'name':'sample.png','media_type':'image/png','data':base64.b64encode(b'\x89PNG\r\n\x1a\nfixture').decode()}
+    body={'message':'Read the target from this image.','model_id':model,'request_key':'without-vision','images':[image]}
+    response=b.post('/api/agent/interpret',json=body)
+    assert response.status_code==422 and response.json()['detail']=='所选模型未启用图片输入'
+    a.put('/api/agent/admin/models/'+model,json=config()|{'supports_images':True,'api_key':''})
+    bill.recharge(owner,100,'fixture','vision-fund','test')
+    calls=[]
+    @contextmanager
+    def stream(*args,**kwargs):
+        calls.append(kwargs['json'])
+        class Reply:
+            def raise_for_status(self):pass
+            def iter_lines(self):
+                result=json.dumps({'draft':{'material':'BF33','targets':{}},'explanation':'Review image.'})
+                yield 'data: '+json.dumps({'choices':[{'delta':{'content':result},'finish_reason':'stop'}],'usage':{'prompt_tokens':100,'completion_tokens':20,'prompt_tokens_details':{'cached_tokens':0}}})
+                yield 'data: [DONE]'
+        yield Reply()
+    monkeypatch.setattr(agent_gateway.httpx,'stream',stream)
+    response=b.post('/api/agent/interpret',json={**body,'request_key':'with-vision'})
+    assert response.status_code==200,response.text
+    content=calls[0]['messages'][1]['content']
+    assert content[0]['type']=='text'
+    assert content[1]['image_url']['url'].startswith('data:image/png;base64,')
+    ollama=agent_gateway._ollama_messages(calls[0]['messages'])
+    assert ollama[1]['content'].startswith('{"message"') and ollama[1]['images']==[image['data']]
+    bad={**image,'data':base64.b64encode(b'not png').decode()}
+    assert b.post('/api/agent/interpret',json={**body,'request_key':'bad-image','images':[bad]}).status_code==422
 
 def test_reserve_settle_failure_idempotence_and_debt(setup):
     a,b,owner,_=setup
