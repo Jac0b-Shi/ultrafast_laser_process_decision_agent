@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 from datetime import timedelta
 from uuid import uuid4
 
@@ -13,10 +14,16 @@ from app.settings import get_settings
 
 def client_key(request: Request) -> str:
     direct = request.client.host if request.client else "unknown"
-    if direct in get_settings().trusted_proxies:
-        forwarded = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
-        if forwarded:
-            return forwarded
+    trusted = set(get_settings().trusted_proxies)
+    if direct in trusted:
+        candidates = [item.strip() for item in request.headers.get("x-forwarded-for", "").split(",")]
+        for candidate in reversed(candidates):
+            try:
+                normalized = str(ipaddress.ip_address(candidate))
+            except ValueError:
+                continue
+            if normalized not in trusted:
+                return normalized
     return direct
 
 
