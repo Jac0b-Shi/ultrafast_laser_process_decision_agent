@@ -246,7 +246,7 @@ def test_legacy_migration_preserves_owner_and_backup(tmp_path,monkeypatch):
     migrate(conn,path)
     assert conn.execute('SELECT id,email,bootstrap FROM users').fetchone()==('same-id',None,1)
     assert conn.execute('SELECT * FROM events').fetchone()==('same-id','original feedback')
-    assert conn.execute('PRAGMA user_version').fetchone()[0]==2
+    assert conn.execute('PRAGMA user_version').fetchone()[0]==3
     backups=list((tmp_path/'backups').glob('*.sqlite3'));assert len(backups)==1
     migrate(conn,path);assert len(list((tmp_path/'backups').glob('*.sqlite3')))==1
     with sqlite3.connect(backups[0]) as old:assert len(old.execute('PRAGMA table_info(users)').fetchall())==4
