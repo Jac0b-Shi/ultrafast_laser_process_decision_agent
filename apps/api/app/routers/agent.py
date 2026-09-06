@@ -44,6 +44,16 @@ class Credentials(BaseModel):
     password: str = Field(max_length=256)
 
 
+class Registration(BaseModel):
+    username: str = Field(min_length=1,max_length=80)
+    email: str = Field(min_length=3,max_length=254)
+    password: str = Field(min_length=12,max_length=256)
+
+
+class Verification(BaseModel):
+    token: str = Field(min_length=20,max_length=200)
+
+
 class ImageAttachment(BaseModel):
     name: str = Field(min_length=1,max_length=200)
     media_type: Literal["image/jpeg","image/png","image/gif","image/webp"]
@@ -121,6 +131,18 @@ def login(body: Credentials, response: Response):
     token, user = store.login(body.username, body.password)
     response.set_cookie("laser_session", token, httponly=True, samesite="strict", secure=os.getenv("LASER_COOKIE_SECURE", "false").lower() == "true", max_age=43200, path="/")
     return user
+
+
+@router.post("/register")
+def register(body: Registration, request: Request):
+    from app.services.email_registration import register as create_registration
+    return create_registration(body.username,body.email,body.password,request)
+
+
+@router.post("/register/verify")
+def verify_registration(body: Verification):
+    from app.services.email_registration import verify
+    return verify(body.token)
 
 
 @router.post("/logout")
