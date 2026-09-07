@@ -1,4 +1,3 @@
-import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -31,14 +30,6 @@ def create_app() -> FastAPI:
     app.include_router(agent.router)
     app.include_router(datasets.router)
     app.include_router(recommendations.router)
-    @app.get("/api/site-config")
-    def site_config():
-        return {
-            "icp_number": os.getenv("LASER_ICP_NUMBER", ""),
-            "icp_url": os.getenv("LASER_ICP_URL", "https://beian.miit.gov.cn/"),
-            "police_number": os.getenv("LASER_POLICE_NUMBER", ""),
-            "police_url": os.getenv("LASER_POLICE_URL", "https://beian.mps.gov.cn/#/query/webSearch"),
-        }
     return app
 
 

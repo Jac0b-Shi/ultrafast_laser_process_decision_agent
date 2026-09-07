@@ -1,7 +1,0 @@
-"use client";
-import Link from "next/link";
-import {useSearchParams} from "next/navigation";
-import {Suspense,useState} from "react";
-import {apiFetch} from "@/lib/api";
-function VerifyContent(){const token=useSearchParams().get("token")??"";const [busy,setBusy]=useState(false),[message,setMessage]=useState(""),[ok,setOk]=useState(false);async function verify(){setBusy(true);setMessage("");try{const result=await apiFetch<{username:string}>("/api/agent/register/verify",{method:"POST",body:JSON.stringify({token})});setOk(true);setMessage(`账号 ${result.username} 已创建，可以登录。`);}catch(e){setMessage(e instanceof Error?e.message:"验证失败");}finally{setBusy(false);}}return <main className="min-h-screen flex items-center justify-center bg-stone-50 p-6"><section className="w-full max-w-md rounded-3xl border bg-white p-10 space-y-5"><p className="text-xs tracking-widest text-teal-800">EMAIL VERIFICATION</p><h1 className="text-2xl font-semibold">确认注册邮箱</h1><p className="text-stone-500">点击确认后才会创建账号。验证链接只能使用一次。</p>{message&&<p role="status" className={ok?"rounded-xl bg-teal-50 p-3":"text-red-700"}>{message}</p>}{ok?<Link className="block text-center rounded-xl bg-teal-800 text-white px-5 py-3" href="/">返回登录</Link>:<button className="w-full rounded-xl bg-teal-800 text-white px-5 py-3 disabled:opacity-40" disabled={busy||!token} onClick={()=>void verify()}>{busy?"正在验证…":"确认并创建账号"}</button>}</section></main>}
-export default function VerifyPage(){return <Suspense fallback={<main className="min-h-screen bg-stone-50"/>}><VerifyContent/></Suspense>}

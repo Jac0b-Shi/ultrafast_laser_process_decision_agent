@@ -37,7 +37,6 @@ class Settings:
     experiments_dir: Path
     config_dir: Path
     cors_origins: tuple[str, ...]
-    trusted_proxies: tuple[str, ...]
 
     @property
     def raw_data_dir(self) -> Path:
@@ -69,12 +68,10 @@ def get_settings() -> Settings:
         for item in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
         if item.strip()
     )
-    trusted_proxies = tuple(item.strip() for item in os.getenv("LASER_TRUSTED_PROXIES", "").split(",") if item.strip())
     return Settings(
         project_root=project_root,
         data_dir=data_dir,
         experiments_dir=experiments_dir,
         config_dir=config_dir,
         cors_origins=origins,
-        trusted_proxies=trusted_proxies,
     )

@@ -23,7 +23,7 @@ pnpm-debug.log*
 .env.*
 !.env.example
 
-# Runtime outputs (including encrypted SMTP/model credentials)
+# Runtime outputs
 experiments/agent/
 data/uploads/
 *.sqlite3-wal

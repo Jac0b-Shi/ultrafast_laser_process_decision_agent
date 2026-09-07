@@ -9,22 +9,9 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
-from app.services import agent_store as store, agent_billing as billing, agent_model_config as models, email_registration as email
+from app.services import agent_store as store, agent_billing as billing, agent_model_config as models
 
 router=APIRouter(prefix='/api/agent',tags=['administration'])
-
-@router.get('/admin/email')
-def email_settings(user=Depends(store.administrator)):
-    return email.config()
-
-@router.put('/admin/email')
-def email_settings_update(body:dict,user=Depends(store.administrator)):
-    return email.save(body,user['id'])
-
-@router.post('/admin/email/test')
-def email_test(body:dict,user=Depends(store.administrator)):
-    email.send_test(body.get('recipient'))
-    return {'ok':True}
 
 class NewUser(BaseModel):
     username:str=Field(min_length=1,max_length=80)

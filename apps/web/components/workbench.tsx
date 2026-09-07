@@ -52,14 +52,10 @@ export function Workbench({
   summary,
   modelInfo,
   onRefresh,
-  recommendationPath = "/api/recommendations",
-  allowFeedback = true,
 }: {
   summary: DatasetSummary | null;
   modelInfo: ModelInfo | null;
   onRefresh: () => void;
-  recommendationPath?: string;
-  allowFeedback?: boolean;
 }) {
   const [form, setForm] = useState<FormState>(initialForm);
   const [result, setResult] = useState<RecommendationResponse | null>(null);
@@ -132,7 +128,7 @@ export function Workbench({
       setSelectedRank(null);
     }
     try {
-      const payload = await apiFetch<RecommendationResponse>(recommendationPath, {
+      const payload = await apiFetch<RecommendationResponse>("/api/recommendations", {
         method: "POST",
         signal: controller.signal,
         body: JSON.stringify({
@@ -254,14 +250,14 @@ export function Workbench({
               onSubmit={submitRecommendation}
               onAlgorithmChange={handleAlgorithmChange}
             />
-            {allowFeedback && <FeedbackForm
+            <FeedbackForm
               result={result}
               selectedRank={selectedRank}
               notes={form.notes}
               feedbackLoading={feedbackLoading}
               onNotesChange={(v) => updateField("notes", v)}
               onSubmit={submitFeedback}
-            />}
+            />
           </div>
 
           {/* right column — info tabs + recommendation list */}
