@@ -145,7 +145,7 @@ stages:
             $COMPOSE -f docker-compose.prod.yml pull
 
             echo "==> recreate services"
-            $COMPOSE -f docker-compose.prod.yml up -d --remove-orphans
+            $COMPOSE -f docker-compose.prod.yml up -d --force-recreate --remove-orphans
 
             echo "==> cleanup old images"
             docker image prune -f
