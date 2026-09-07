@@ -13,7 +13,7 @@ services:
       LASER_ADMIN_USERNAME: ${LASER_ADMIN_USERNAME:-}
       LASER_ADMIN_PASSWORD: ${LASER_ADMIN_PASSWORD:-}
       LASER_COOKIE_SECURE: ${LASER_COOKIE_SECURE:-false}
-      CORS_ORIGINS: http://localhost:${WEB_PORT:-3000},http://127.0.0.1:${WEB_PORT:-3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     volumes:
       - ./data:/workspace/data
       - ./experiments:/workspace/experiments
