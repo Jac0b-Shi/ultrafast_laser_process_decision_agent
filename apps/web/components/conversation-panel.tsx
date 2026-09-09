@@ -20,7 +20,7 @@ export default function ConversationPanel({materials,models,conversation,onConve
  const active=models.find(model=>modelId?model.id===modelId:model.default);
  useEffect(()=>{const safeTurns=Array.isArray(initial)?initial.filter((turn):turn is Turn=>Boolean(turn&&typeof turn==="object")):[];setTurns(safeTurns);const last=[...safeTurns].reverse().find(turn=>turn.task&&typeof turn.task==="object");if(last?.task)setTask(last.task);},[initial]);
  useEffect(()=>{if(!active?.supports_images)setImages([]);},[active?.supports_images]);
- useEffect(()=>end.current?.scrollIntoView({block:"end"}),[turns,busy]);
+ useEffect(()=>{end.current?.scrollIntoView({block:"end"});},[turns,busy]);
  function updateTarget(key:string, update:Record<string,unknown>){setTask(old=>({...old,targets:{...(old.targets??{}),[key]:{...(old.targets??{})[key],...update,unit:"um",operator:"eq"}}}));}
  function primary(){return Object.keys(task.targets??{})[0]??"depth_um";}
  async function send(forceRecommendation=false){
