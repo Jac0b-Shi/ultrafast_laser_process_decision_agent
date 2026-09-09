@@ -198,7 +198,7 @@ def test_conversation_turn_persists_safe_tool_events(clients, monkeypatch):
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["recommendation"] is None
-    assert body["events"][0]["tool"] == "材料与数据概况"
+    assert body["events"] == []
     saved = a.get(f"/api/agent/conversations/{entity}").json()["messages"]
     assert saved[-1]["assistant"] == body["reply"]
     assert b.get(f"/api/agent/conversations/{entity}").status_code == 404

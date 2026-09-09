@@ -21,3 +21,8 @@ Provider 由管理中心的大语言模型页面配置，支持 Chat Completions
 ## 验证
 
 后端：`docker compose run --rm --no-deps api pytest`。前端：`docker compose build web`。测试使用临时账号与临时数据库。API 保留 PDF、DOCX 知识文件解析依赖，生产包不包含离线绘图工具。
+# v1.0 流式对话与个人工艺模型
+
+`POST /api/agent/conversations/{id}/turns/stream` 使用 SSE 依次返回 `tool`、`answer`、`result`、`done`，异常或取消返回 `error`／`stopped`。`request_key` 是整轮幂等键，事件与最终结果保存为账号隔离的追加记录。原 `/turns` JSON 接口继续兼容。
+
+模型评估由 `worker` 服务消费追加式任务。分析接口位于 `/api/agent/analysis/*`，模型产物保存在 `experiments/agent/model_artifacts/`，Git 和镜像均不包含运行时产物。启用范围是当前账号、材料和质量指标。

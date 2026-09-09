@@ -88,6 +88,7 @@ def decide(owner, task, proposed=None, history_only=False):
     historical = sorted([s for s in scored if s[2]], key=tie)
     references = [{"case_id": str(frame.loc[i, "case_id"]), "parameters": numbers(frame.loc[i], PARAMETER_COLUMNS), "measured_quality": numbers(frame.loc[i], QUALITY_COLUMNS)} for _, i, _ in scored[:3]]
     audit = {}
+    model_versions = {}
     fitted_intermediates = {}
     if historical:
         loss, index, _ = historical[0]
@@ -131,7 +132,13 @@ def decide(owner, task, proposed=None, history_only=False):
         predictions, uncertainty = {}, {}
         for target in task["targets"]:
             try:
-                model, audit[target] = select_model(frame, target, selected)
+                from app.services.agent_model_versions import active_model
+                active=active_model(owner,task['material'],target)
+                if active:
+                    model,version=active
+                    audit[target]=version['audit']
+                    model_versions[target]=version['id']
+                else:model, audit[target] = select_model(frame, target, selected)
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             predictions[target] = model.predict(generated)
@@ -174,4 +181,4 @@ def decide(owner, task, proposed=None, history_only=False):
     formula_snapshot = approved()
     formula_version = hashlib.sha256(json.dumps(formula_snapshot, sort_keys=True).encode()).hexdigest()[:12]
     signature = hashlib.sha256(pd.util.hash_pandas_object(full.astype(str), index=False).values.tobytes()).hexdigest()[:16]
-    return {"source": source, "parameters": parameters, "quality": quality, "match_score": 1/(1+loss), "confidence": confidence, "similar_cases": references, "intermediate_metrics": intermediate, "intermediate_by_target": by_target, "formula_snapshot": formula_snapshot, "model_audit": audit, "data_version": signature+":"+store.version(owner), "model_version": "mechanism-grouped-v1:"+formula_version, "task": task}
+    return {"source": source, "parameters": parameters, "quality": quality, "match_score": 1/(1+loss), "confidence": confidence, "similar_cases": references, "intermediate_metrics": intermediate, "intermediate_by_target": by_target, "formula_snapshot": formula_snapshot, "model_audit": audit, "model_versions": model_versions, "data_version": signature+":"+store.version(owner), "model_version": "mechanism-grouped-v1:"+formula_version, "task": task}

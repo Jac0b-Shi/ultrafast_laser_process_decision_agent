@@ -22,3 +22,6 @@ Docker 产品后端测试覆盖以上权限、迁移、计费及并发边界。�
 - 普通问题无需预先填写工艺表单；`Enter` 发送、`Shift+Enter` 换行，中文输入法组合输入不触发提前发送。
 - 推荐要求材料、质量目标、容差均明确。缺失字段时返回追问；参数与案例依据只来自服务端确定性推荐器。
 - 重新打开历史任务后，用户消息、助手回答、工具事件和推荐引用均可查看。
+# 流式与分析增量验收
+
+流式事件、模型版本和论文实验指标的详细清单见 [streaming-analysis-experiment.md](streaming-analysis-experiment.md)。生产构建需同时包含 `api`、`web` 和 `worker`，反向代理必须保留 `text/event-stream` 并接受 `X-Accel-Buffering: no`。

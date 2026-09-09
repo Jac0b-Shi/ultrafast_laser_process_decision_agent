@@ -29,3 +29,19 @@ services:
       NEXT_PUBLIC_API_BASE_URL: ""
     ports:
       - "${WEB_PORT:-3000}:3000"
+
+  worker:
+    image: ccr.ccs.tencentyun.com/jacobshi/ultrafast_laser_process_decision_agent-api:latest
+    container_name: ultrafast-worker
+    restart: unless-stopped
+    command: ["python", "-m", "app.services.agent_model_worker"]
+    env_file:
+      - .env
+    environment:
+      LASER_DATA_DIR: /workspace/data
+      LASER_EXPERIMENTS_DIR: /workspace/experiments
+      LASER_CONFIG_DIR: /workspace/configs
+    volumes:
+      - ${DEPLOY_STATE_DIR:-./.runtime-state}/data:/workspace/data
+      - ${DEPLOY_STATE_DIR:-./.runtime-state}/experiments:/workspace/experiments
+      - ./configs:/workspace/configs:ro

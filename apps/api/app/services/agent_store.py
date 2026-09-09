@@ -193,3 +193,16 @@ def version(owner):
     with database() as conn:
         row = conn.execute("SELECT COALESCE(MAX(seq),0) AS v FROM events WHERE owner=? AND kind='feedback'", (owner,)).fetchone()
     return str(row["v"])
+
+
+def interrupt_incomplete_turns():
+    """Mark streams left running by a previous API process as interrupted."""
+    with database() as conn:rows=conn.execute("SELECT * FROM events WHERE kind='turn_run' ORDER BY seq").fetchall()
+    by_owner={}
+    for row in rows:by_owner.setdefault(row['owner'],[]).append(row)
+    for owner,items in by_owner.items():
+        for run in _project(items).values():
+            if run.get('status')=='running':
+                latest=get_record(owner,'turn_run',run['id'])
+                event={'type':'error','data':{'message':'服务重启导致本轮中断，请重新发送'}}
+                append(owner,'turn_run',{**latest,'status':'interrupted','wire_events':[*(latest.get('wire_events') or []),event]},run['id'],'revise')

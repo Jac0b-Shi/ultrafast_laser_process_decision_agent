@@ -3,22 +3,37 @@ from __future__ import annotations
 import hashlib
 import base64
 import binascii
+import json
 import math
 import os
+import queue
+import threading
+import time
 from pathlib import Path
 from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, File
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from app.services import agent_store as store
-from app.services.agent_decision import decide, dataset, validate_task
+from app.services.agent_decision import decide, validate_task
+from app.services import agent_decision as decision_service
 from app.services.agent_models import REGISTRY, groups
 from app.services.agent_knowledge import extract, search, orchestrate, document_payload
 from app.services.data_loader import QUALITY_COLUMNS, PARAMETER_COLUMNS
 from app.settings import get_settings
 from app.services.agent_billing import finish as finish_call
 from app.services.agent_turns import run_turn
+from app.services.agent_gateway import InvocationCancelled
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
+_turn_cancellations: dict[tuple[str,str],threading.Event] = {}
+_turn_lock = threading.Lock()
+_original_dataset=decision_service.dataset
+dataset=_original_dataset  # compatibility seam used by existing isolated tests
+
+
+def _dataset(owner):
+    return dataset(owner) if dataset is not _original_dataset else decision_service.dataset(owner)
 
 
 @router.get("/formulas")
@@ -70,6 +85,18 @@ class Message(BaseModel):
     target_update: dict[str, Any] = Field(default_factory=dict)
 
 
+class EvaluationRequest(BaseModel):
+    material:str=Field(min_length=1,max_length=100)
+    target:str=Field(min_length=1,max_length=100)
+    algorithms:list[str]=Field(min_length=1,max_length=20)
+
+
+class ActivationRequest(BaseModel):
+    material:str=Field(min_length=1,max_length=100)
+    target:str=Field(min_length=1,max_length=100)
+    version_id:str|None=None
+
+
 def image_parts(images: list[ImageAttachment]):
     parts=[];total=0
     signatures={
@@ -106,7 +133,7 @@ def interpret(body: Message, user=Depends(store.current_user)):
 @router.post("/formulas/extract")
 def extract_relation(body: Message, user=Depends(store.administrator)):
     material = body.task.get("material")
-    if material not in set(dataset(user["id"]).material):
+    if material not in set(_dataset(user["id"]).material):
         raise HTTPException(422, "请选择有数据支持的材料")
     citations = search("public", body.message)
     result = orchestrate(body.message, {"fields": PARAMETER_COLUMNS, "materials": [material]}, citations, purpose="relations",owner=user["id"],request_key=body.request_key,model_id=body.model_id,platform=True,images=image_parts(body.images))
@@ -163,13 +190,43 @@ def me(user=Depends(store.current_user)):
 
 @router.get("/materials")
 def materials(user=Depends(store.current_user)):
-    frame = dataset(user["id"])
+    frame = _dataset(user["id"])
     return [{"name": str(name), "metrics": [c for c in QUALITY_COLUMNS if group[c].notna().any()]} for name, group in frame.groupby("material")]
 
 
 @router.get("/algorithms")
 def algorithms(user=Depends(store.current_user)):
     return [{"id": key, "name": item[0], "category": item[1]} for key, item in REGISTRY.items()]
+
+
+@router.get('/analysis/evaluations')
+def evaluation_jobs(user=Depends(store.current_user)):
+    from app.services.agent_model_versions import jobs
+    return jobs(user['id'])
+
+
+@router.post('/analysis/evaluations')
+def create_evaluation(body:EvaluationRequest,user=Depends(store.current_user)):
+    from app.services.agent_model_versions import create_job
+    return create_job(user['id'],body.material,body.target,body.algorithms)
+
+
+@router.get('/analysis/models')
+def process_models(user=Depends(store.current_user)):
+    from app.services.agent_model_versions import versions
+    return versions(user['id'])
+
+
+@router.post('/analysis/models/activate')
+def activate_process_model(body:ActivationRequest,user=Depends(store.current_user)):
+    from app.services.agent_model_versions import activate
+    return activate(user['id'],body.material,body.target,body.version_id)
+
+
+@router.post('/analysis/models/rollback')
+def rollback_process_model(body:ActivationRequest,user=Depends(store.current_user)):
+    from app.services.agent_model_versions import rollback
+    return rollback(user['id'],body.material,body.target)
 
 
 @router.get("/conversations")
@@ -184,40 +241,143 @@ def new_conversation(user=Depends(store.current_user)):
 
 @router.get("/conversations/{entity}")
 def conversation(entity: str, user=Depends(store.current_user)):
-    return store.get_record(user["id"], "conversation", entity)
+    record=store.get_record(user["id"], "conversation", entity)
+    messages=[]
+    for item in record.get('messages') or []:
+        if not isinstance(item,dict):messages.append(item);continue
+        copy=dict(item);recommendation_id=copy.get('recommendation_id')
+        if recommendation_id:
+            try:copy['recommendation']=store.get_record(user['id'],'recommendation',recommendation_id)
+            except HTTPException:copy['recommendation_unavailable']=True
+        elif isinstance(copy.get('result'),dict):copy['recommendation']=copy['result']
+        messages.append(copy)
+    return {**record,'messages':messages}
+
+
+def _conversation_history(prior):
+    messages=[]
+    source=prior.get("messages") or []
+    truncated=len(source)>12
+    for item in source[-12:]:
+        if not isinstance(item,dict):continue
+        text=item.get("text")
+        answer=item.get("assistant")
+        if isinstance(text,str) and text:messages.append({"role":"user","content":text[:3000]})
+        if isinstance(answer,str) and answer:messages.append({"role":"assistant","content":answer[:3000]})
+    return messages,truncated
+
+
+def _persist_turn(owner,entity,prior,body,result,truncated=False):
+    recommendation=result.get("recommendation")
+    if recommendation:
+        recommendation.update({"conversation_id":entity})
+        recommendation_id=store.append(owner,"recommendation",recommendation)
+        recommendation["id"]=recommendation_id
+    entry={"role":"user","text":body.message,"images":len(body.images),"assistant":result["reply"],"events":result.get("events",[]),"task":result.get("task",{}),"recommendation_id":recommendation.get("id") if recommendation else None,"context_truncated":truncated}
+    latest=store.get_record(owner,"conversation",entity)
+    title=latest.get("title") or "新的加工任务"
+    if result.get("task",{}).get("material"):title=str(result["task"]["material"])+" · 加工任务"
+    store.append(owner,"conversation",{**latest,"title":title,"task":result.get("task",{}),"messages":[*(latest.get("messages") or []),entry]},entity,"revise")
+    if result.get("call_id"):finish_call(result["call_id"],True,result)
+    return {**result,"conversation_id":entity,"context_truncated":truncated}
 
 
 @router.post("/conversations/{entity}/turns")
 def turn(entity: str, body: Message, user=Depends(store.current_user)):
     """Conversational entry point. Old /messages stays as the form compatibility API."""
     prior = store.get_record(user["id"], "conversation", entity)
-    frame = dataset(user["id"])
+    frame = _dataset(user["id"])
     current_task = {**(prior.get("task") or {}), **body.target_update}
     payload_images = image_parts(body.images)
-    result = run_turn(user["id"], body.message, current_task, body.model_id, body.request_key, payload_images, frame)
+    history,truncated=_conversation_history(prior)
+    result = run_turn(user["id"], body.message, current_task, body.model_id, body.request_key, payload_images, frame,history=history)
     if "reply" not in result:  # an idempotent replay from the provider
         return result
-    recommendation = result.get("recommendation")
-    if recommendation:
-        recommendation.update({"conversation_id": entity})
-        recommendation_id = store.append(user["id"], "recommendation", recommendation)
-        recommendation["id"] = recommendation_id
-    entry = {"role": "user", "text": body.message, "images": len(body.images), "assistant": result["reply"], "events": result.get("events", []), "task": result.get("task", {}), "recommendation_id": recommendation.get("id") if recommendation else None}
-    messages = [*(prior.get("messages") or []), entry]
-    title = prior.get("title") or "新的加工任务"
-    if result.get("task", {}).get("material"):
-        title = str(result["task"]["material"]) + " · 加工任务"
-    store.append(user["id"], "conversation", {**prior, "title": title, "task": result.get("task", {}), "messages": messages}, entity, "revise")
-    if result.get("call_id"):
-        finish_call(result["call_id"], True, result)
-    return {**result, "conversation_id": entity}
+    return _persist_turn(user["id"],entity,prior,body,result,truncated)
+
+
+def _sse(event,data):
+    return f"event: {event}\ndata: {json.dumps(data,ensure_ascii=False,allow_nan=False)}\n\n"
+
+
+@router.post("/conversations/{entity}/turns/stream")
+def stream_turn(entity:str,body:Message,user=Depends(store.current_user)):
+    if not body.request_key:raise HTTPException(422,"流式请求需要唯一操作标识")
+    owner=user["id"];prior=store.get_record(owner,"conversation",entity)
+    fingerprint=hashlib.sha256(body.model_dump_json(exclude_none=True).encode()).hexdigest()
+    prior_runs=[r for r in store.records(owner,"turn_run") if r["id"]==body.request_key]
+    if prior_runs:
+        run=prior_runs[0]
+        if run.get("fingerprint")!=fingerprint:raise HTTPException(409,"重复操作标识的内容不同")
+        def replay():
+            for item in run.get("wire_events",[]):yield _sse(item["type"],item["data"])
+            if run.get("status")=="running":yield _sse("error",{"message":"原请求仍在处理，请稍后重试"})
+        return StreamingResponse(replay(),media_type="text/event-stream",headers={"Cache-Control":"no-cache, no-transform","X-Accel-Buffering":"no"})
+    store.append(owner,"turn_run",{"status":"running","fingerprint":fingerprint,"wire_events":[]},body.request_key)
+    output=queue.Queue();cancel=threading.Event();key=(owner,body.request_key)
+    with _turn_lock:_turn_cancellations[key]=cancel
+    def emit(kind,data):output.put((kind,data))
+    def worker():
+        wire=[];last_saved=[0.0]
+        def publish(kind,data):
+            item={"type":kind,"data":data};wire.append(item);emit(kind,data)
+            now=time.monotonic()
+            if kind!='answer' or now-last_saved[0]>=.5:
+                latest=store.get_record(owner,"turn_run",body.request_key)
+                store.append(owner,"turn_run",{**latest,"status":"running","fingerprint":fingerprint,"wire_events":wire},body.request_key,"revise")
+                last_saved[0]=now
+        try:
+            frame=_dataset(owner);current={**(prior.get("task") or {}),**body.target_update}
+            history,truncated=_conversation_history(prior)
+            result=run_turn(owner,body.message,current,body.model_id,body.request_key,image_parts(body.images),frame,history=history,on_event=lambda e:publish("tool",e),on_fragment=lambda s:publish("answer",{"text":s}),cancelled=cancel.is_set)
+            if "reply" not in result:final=result
+            else:final=_persist_turn(owner,entity,prior,body,result,truncated)
+            publish("result",{"task":final.get("task",{}),"recommendation":final.get("recommendation"),"context_truncated":truncated})
+            latest=store.get_record(owner,"turn_run",body.request_key)
+            done={"conversation_id":entity,"request_key":body.request_key}
+            wire.append({"type":"done","data":done})
+            store.append(owner,"turn_run",{**latest,"status":"done","fingerprint":fingerprint,"wire_events":wire,"result":final},body.request_key,"revise")
+            emit("done",done)
+        except InvocationCancelled:
+            publish("stopped",{"message":"已停止生成，未完成内容未扣费"})
+            latest=store.get_record(owner,"turn_run",body.request_key)
+            store.append(owner,"turn_run",{**latest,"status":"stopped"},body.request_key,"revise")
+        except HTTPException as exc:
+            publish("error",{"message":str(exc.detail),"status":exc.status_code})
+            latest=store.get_record(owner,"turn_run",body.request_key);store.append(owner,"turn_run",{**latest,"status":"failed"},body.request_key,"revise")
+        except Exception:
+            publish("error",{"message":"对话处理失败，本次未完成内容不扣费"})
+            latest=store.get_record(owner,"turn_run",body.request_key);store.append(owner,"turn_run",{**latest,"status":"failed"},body.request_key,"revise")
+        finally:
+            with _turn_lock:_turn_cancellations.pop(key,None)
+            output.put(None)
+    threading.Thread(target=worker,daemon=True).start()
+    def events():
+        try:
+            while True:
+                try:item=output.get(timeout=15)
+                except queue.Empty:
+                    yield ": heartbeat\n\n";continue
+                if item is None:break
+                yield _sse(*item)
+        except GeneratorExit:
+            cancel.set();raise
+    return StreamingResponse(events(),media_type="text/event-stream",headers={"Cache-Control":"no-cache, no-transform","X-Accel-Buffering":"no"})
+
+
+@router.post("/conversations/{entity}/turns/{request_key}/cancel")
+def cancel_turn(entity:str,request_key:str,user=Depends(store.current_user)):
+    store.get_record(user["id"],"conversation",entity)
+    with _turn_lock:event=_turn_cancellations.get((user["id"],request_key))
+    if event:event.set()
+    return {"ok":True,"active":bool(event)}
 
 
 @router.post("/conversations/{entity}/messages")
 def message(entity: str, body: Message, user=Depends(store.current_user)):
     prior = store.get_record(user["id"], "conversation", entity)
     task = body.task
-    frame = dataset(user["id"])
+    frame = _dataset(user["id"])
     validate_task(task, frame)
     applicable = frame.loc[frame.material == task["material"]]
     citations = search(user["id"], body.message+" "+str(task.get("material", "")))
@@ -266,9 +426,19 @@ def feedback(body: dict, user=Depends(store.current_user)):
     recommendation_id = body.get("recommendation_id")
     if recommendation_id:
         rec = store.get_record(user["id"], "recommendation", recommendation_id)
-        body = {**body, "material": rec["task"]["material"], "parameters": body.get("parameters", rec["parameters"])}
+        body = {**body, "material": rec["task"]["material"], "parameters": body.get("parameters", rec["parameters"]),"predicted_quality":rec.get("quality"),"model_versions":rec.get("model_versions",{}),"prediction_source":"case_reference" if rec.get("source")=="historical" else "model_prediction"}
     valid_feedback(body)
     return {"id": store.append(user["id"], "feedback", body), "data_version": store.version(user["id"])}
+
+
+@router.get('/analysis/feedback-comparison')
+def feedback_comparison(user=Depends(store.current_user)):
+    result=[]
+    for item in store.records(user['id'],'feedback'):
+        predicted=item.get('predicted_quality') or {}
+        measured=item.get('quality') or {}
+        result.append({'id':item['id'],'material':item.get('material'),'recommendation_id':item.get('recommendation_id'),'prediction_source':item.get('prediction_source'),'predicted_quality':predicted,'measured_quality':measured,'delta':{key:measured[key]-predicted[key] for key in measured.keys()&predicted.keys()},'model_versions':item.get('model_versions',{})})
+    return result
 
 
 @router.get("/feedback/{entity}/history")

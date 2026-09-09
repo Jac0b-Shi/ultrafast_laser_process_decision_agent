@@ -25,6 +25,8 @@ pnpm-debug.log*
 
 # Runtime outputs (including encrypted SMTP/model credentials)
 experiments/agent/
+experiments/agent/model_artifacts/
+experiments/agent/evaluation_exports/
 data/uploads/
 *.sqlite3-wal
 *.sqlite3-shm

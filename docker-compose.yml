@@ -33,3 +33,21 @@ services:
       - "${WEB_PORT:-3000}:3000"
     depends_on:
       - api
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["python", "-m", "app.services.agent_model_worker"]
+    env_file:
+      - .env
+    environment:
+      LASER_DATA_DIR: /workspace/data
+      LASER_EXPERIMENTS_DIR: /workspace/experiments
+      LASER_CONFIG_DIR: /workspace/configs
+    volumes:
+      - ./data:/workspace/data
+      - ./experiments:/workspace/experiments
+      - ./configs:/workspace/configs:ro
+      - ./docs/literature:/workspace/docs/literature:ro
+    restart: unless-stopped

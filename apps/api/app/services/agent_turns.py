@@ -66,27 +66,56 @@ def _missing(task: dict[str, Any]) -> str | None:
 
 
 def run_turn(owner: str, message: str, current_task: dict[str, Any], model_id: str | None,
-             request_key: str | None, images: list[dict[str, Any]], frame) -> dict[str, Any]:
+             request_key: str | None, images: list[dict[str, Any]], frame, history=None,
+             on_event=None, on_fragment=None, cancelled=None) -> dict[str, Any]:
     """Run at most one pass through the fixed registry and return a safe transcript."""
     if not message.strip() and not images:
         raise HTTPException(422, "请输入问题、加工需求或图片")
-    events: list[dict[str, Any]] = [_event("材料与数据概况", f"当前可用 {len(frame)} 条实测记录、{frame.material.nunique()} 类材料")]
+    events: list[dict[str, Any]] = []
+    def record(tool, summary, data=None):
+        if len(events)>=MAX_TOOL_CALLS:raise HTTPException(422, f"本轮已达到 {MAX_TOOL_CALLS} 次工具调用上限，请缩小任务范围后继续")
+        if cancelled and cancelled():
+            from app.services.agent_gateway import InvocationCancelled
+            raise InvocationCancelled()
+        if on_event:on_event({"tool":tool,"status":"running","summary":summary,"data":data or {}})
+        item=_event(tool,summary,data);events.append(item)
+        if on_event:on_event({**item,"status":"done"})
     task = _task_from_text(message, current_task, frame)
-    if task != current_task:
-        events.append(_event("填写加工目标", "已从本轮明确描述中更新目标草稿", {"task": task}))
-    recommendation_words = ("推荐", "参数", "加工", "生成一组", "怎么设")
-    wants_recommendation = bool(task.get("targets")) and any(word in message for word in recommendation_words)
+    relevant_before = (current_task.get("material"), current_task.get("targets") or {})
+    relevant_after = (task.get("material"), task.get("targets") or {})
+    if relevant_after != relevant_before:
+        record("填写加工目标", "已从本轮明确描述中更新目标草稿", {"task": task})
+    plan=orchestrate(message,{"task":task},[],purpose="tools",owner=owner,request_key=request_key,model_id=model_id,images=images,history=history,cancelled=cancelled)
+    if "operation_result" in plan:return plan["operation_result"]
+    if plan.get("call_id"):
+        from app.services.agent_billing import finish
+        finish(plan["call_id"],True,plan)
+    draft=plan.get('draft') or {}
+    if draft:
+        before=task
+        task={**task,**({'material':draft['material']} if draft.get('material') else {}),'targets':{**(task.get('targets') or {}),**(draft.get('targets') or {})}}
+        if task!=before:record("填写加工目标","已从本轮明确内容更新目标草稿",{"task":task})
+    planned=set(plan.get("tools") or [])
+    local_overview = plan.get("status") == "disabled" and any(
+        word in message.lower() for word in ("数据集", "哪些材料", "多少条", "数据概况")
+    )
+    if "材料与数据概况" in planned or local_overview:
+        record("材料与数据概况", f"当前可用 {len(frame)} 条实测记录、{frame.material.nunique()} 类材料")
+    recommendation_words = ("推荐", "生成一组", "怎么设", "如何设置", "给出工艺")
+    explicit_intent=any(word in message for word in recommendation_words)
+    wants_recommendation = bool(task.get("targets")) and ("生成参数推荐" in planned or (plan.get("status")=="disabled" and explicit_intent))
     recommendation = None
     if wants_recommendation:
         missing = _missing(task)
         if missing:
+            if on_fragment:on_fragment(missing)
             return {"reply": missing, "task": task, "events": events, "recommendation": None}
         validate_task(task, frame)
         applicable = frame.loc[frame.material == task["material"]]
-        events.append(_event("查询相似案例", f"找到 {len(applicable)} 条同材料实测记录", {"material": task["material"], "count": len(applicable)}))
+        record("查询相似案例", f"找到 {len(applicable)} 条同材料实测记录", {"material": task["material"], "count": len(applicable)})
         citations = search(owner, message + " " + str(task["material"]))
         if citations:
-            events.append(_event("检索知识", f"找到 {len(citations)} 条相关知识片段", {"sources": [c["file"] for c in citations]}))
+            record("检索知识", f"找到 {len(citations)} 条相关知识片段", {"sources": [c["file"] for c in citations]})
         result = decide(owner, task, history_only=True)
         provider = {"status": "disabled", "message": "历史优先／本地确定性推荐", "candidates": []}
         if result is None:
@@ -97,17 +126,20 @@ def run_turn(owner: str, message: str, current_task: dict[str, Any], model_id: s
             result = decide(owner, task, provider.get("candidates"))
         result.update({"citations": citations, "provider": provider})
         recommendation = result
-        events.append(_event("生成参数推荐", "已按历史案例与确定性模型生成一组参数", {"source": result["source"], "similar_cases": len(result["similar_cases"])}))
+        record("生成参数推荐", "已按历史案例与确定性模型生成一组参数", {"source": result["source"], "similar_cases": len(result["similar_cases"])})
         reply = f"已生成 {task['material']} 的一组参数。结果附有 {len(result['similar_cases'])} 条同材料实测案例，可在下方展开查看依据。"
+        if on_fragment:on_fragment(reply)
         return {"reply": reply, "task": task, "events": events, "recommendation": recommendation, "call_id": provider.get("call_id")}
     citations = search(owner, message)
     if citations:
-        events.append(_event("检索知识", f"找到 {len(citations)} 条相关知识片段", {"sources": [c["file"] for c in citations]}))
+        record("检索知识", f"找到 {len(citations)} 条相关知识片段", {"sources": [c["file"] for c in citations]})
     # A provider is used for ordinary conversation when configured. The local
     # fallback deliberately explains its limitation instead of pretending to answer.
     response = orchestrate(message, {"task": task, "materials": sorted(str(x) for x in frame.material.dropna().unique())}, citations,
-                           purpose="chat", owner=owner, request_key=request_key, model_id=model_id, images=images)
+                           purpose="chat", owner=owner, request_key=request_key, model_id=model_id, images=images,
+                           history=history,on_fragment=on_fragment,cancelled=cancelled)
     if "operation_result" in response:
         return response["operation_result"]
     reply = response.get("reply") or "当前为本地确定性模式，只能根据已记录的数据推荐参数；请选择已启用的 AI 模型进行通用问答。"
+    if on_fragment and response.get("status") == "disabled":on_fragment(reply)
     return {"reply": reply, "task": task, "events": events, "recommendation": None, "call_id": response.get("call_id")}

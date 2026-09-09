@@ -9,6 +9,8 @@ from app.settings import get_settings
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    from app.services.agent_store import interrupt_incomplete_turns
+    interrupt_incomplete_turns()
     app = FastAPI(
         title="Ultrafast Laser Process Decision API",
         version="0.1.0",
