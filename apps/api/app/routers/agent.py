@@ -16,6 +16,7 @@ from app.services.agent_knowledge import extract, search, orchestrate, document_
 from app.services.data_loader import QUALITY_COLUMNS, PARAMETER_COLUMNS
 from app.settings import get_settings
 from app.services.agent_billing import finish as finish_call
+from app.services.agent_turns import run_turn
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
@@ -66,6 +67,7 @@ class Message(BaseModel):
     model_id: str | None = None
     request_key: str | None = Field(default=None,max_length=100)
     images: list[ImageAttachment] = Field(default_factory=list,max_length=4)
+    target_update: dict[str, Any] = Field(default_factory=dict)
 
 
 def image_parts(images: list[ImageAttachment]):
@@ -183,6 +185,32 @@ def new_conversation(user=Depends(store.current_user)):
 @router.get("/conversations/{entity}")
 def conversation(entity: str, user=Depends(store.current_user)):
     return store.get_record(user["id"], "conversation", entity)
+
+
+@router.post("/conversations/{entity}/turns")
+def turn(entity: str, body: Message, user=Depends(store.current_user)):
+    """Conversational entry point. Old /messages stays as the form compatibility API."""
+    prior = store.get_record(user["id"], "conversation", entity)
+    frame = dataset(user["id"])
+    current_task = {**(prior.get("task") or {}), **body.target_update}
+    payload_images = image_parts(body.images)
+    result = run_turn(user["id"], body.message, current_task, body.model_id, body.request_key, payload_images, frame)
+    if "reply" not in result:  # an idempotent replay from the provider
+        return result
+    recommendation = result.get("recommendation")
+    if recommendation:
+        recommendation.update({"conversation_id": entity})
+        recommendation_id = store.append(user["id"], "recommendation", recommendation)
+        recommendation["id"] = recommendation_id
+    entry = {"role": "user", "text": body.message, "images": len(body.images), "assistant": result["reply"], "events": result.get("events", []), "task": result.get("task", {}), "recommendation_id": recommendation.get("id") if recommendation else None}
+    messages = [*(prior.get("messages") or []), entry]
+    title = prior.get("title") or "新的加工任务"
+    if result.get("task", {}).get("material"):
+        title = str(result["task"]["material"]) + " · 加工任务"
+    store.append(user["id"], "conversation", {**prior, "title": title, "task": result.get("task", {}), "messages": messages}, entity, "revise")
+    if result.get("call_id"):
+        finish_call(result["call_id"], True, result)
+    return {**result, "conversation_id": entity}
 
 
 @router.post("/conversations/{entity}/messages")

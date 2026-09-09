@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Edit2, Trash2, Check, X, Database, FileText } from "lucide-react";
+import { Plus, Edit2, Trash2, Check, X, FileText } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import type { ExperimentData, MaterialListResponse, ExperimentDataListResponse } from "@/types/api";
 
@@ -239,11 +239,8 @@ export function DataManagement() {
       <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
         <div className="max-w-[1440px] mx-auto px-5 flex items-center justify-between gap-4 h-16">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary text-white">
-              <Database size={18} />
-            </div>
             <div>
-              <h1 className="text-lg font-bold text-gray-900">拟合数据管理</h1>
+              <h1 className="text-lg font-bold text-gray-900">超快激光加工工艺数据库智能体系统</h1>
               <p className="text-xs text-gray-500">管理实验数据与材料信息</p>
             </div>
           </div>

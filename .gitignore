@@ -71,6 +71,8 @@ Thumbs.db
 .codebuddy/
 .workbuddy/
 .playwright-mcp/
+.test-results/
+playwright-report/
 
 # Shared IDE run entries
 !.run/

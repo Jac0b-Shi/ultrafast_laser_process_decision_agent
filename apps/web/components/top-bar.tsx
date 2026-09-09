@@ -1,6 +1,7 @@
 "use client";
 
 import { Database, FlaskConical, RefreshCcw, Settings } from "lucide-react";
+import { PRODUCT_NAME, PRODUCT_VERSION } from "@/lib/product";
 import type { DatasetSummary, ModelInfo } from "@/types/api";
 
 type Props = {
@@ -17,12 +18,9 @@ export function TopBar({ summary, modelInfo, onRefresh, currentPage, onPageChang
     <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
       <div className="max-w-[1440px] mx-auto px-5 flex items-center justify-between gap-4 h-16">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary text-white shrink-0">
-            <FlaskConical size={18} />
-          </div>
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-gray-900 truncate">
-              超快激光加工工艺数据库智能体
+              {PRODUCT_NAME}
             </h1>
             <p className="text-xs text-gray-500 truncate">
               基于实验数据的参数推荐与反馈闭环
@@ -67,7 +65,7 @@ export function TopBar({ summary, modelInfo, onRefresh, currentPage, onPageChang
             {summary?.materials.length ?? "-"} 类材料
           </span>
           <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-gray-50 text-gray-600 border border-gray-200">
-            v{modelInfo?.model_version ?? "-"}
+            {PRODUCT_VERSION}
           </span>
           <button
             onClick={onRefresh}

@@ -185,6 +185,26 @@ def test_draft_does_not_recommend_and_relation_requires_review(clients, monkeypa
     assert len(approved())==1
 
 
+def test_conversation_turn_persists_safe_tool_events(clients, monkeypatch):
+    from app.routers import agent
+    from app.services.data_loader import PARAMETER_COLUMNS, QUALITY_COLUMNS
+    a, b = clients
+    frame = pd.DataFrame([{"material":"BF33", "case_id":"case-1", "scan_speed_mm_s":10, "depth_um":20}])
+    frame = frame.reindex(columns=[*frame.columns, *[c for c in PARAMETER_COLUMNS+QUALITY_COLUMNS if c not in frame]])
+    monkeypatch.setattr(agent, "dataset", lambda owner: frame)
+    entity = a.post("/api/agent/conversations").json()["id"]
+    url = f"/api/agent/conversations/{entity}/turns"
+    response = a.post(url, json={"message":"飞秒激光和皮秒激光有什么差别？", "request_key":"ordinary-question"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["recommendation"] is None
+    assert body["events"][0]["tool"] == "材料与数据概况"
+    saved = a.get(f"/api/agent/conversations/{entity}").json()["messages"]
+    assert saved[-1]["assistant"] == body["reply"]
+    assert b.get(f"/api/agent/conversations/{entity}").status_code == 404
+    assert a.post(url, json={"message":""}).status_code == 422
+
+
 def test_transform_ignores_query_responses(clients):
     from app.services.agent_models import MechanismFeatures
     frame=pd.DataFrame({'material':['BF33']*12,'scan_speed_mm_s':np.arange(1,13),'repetition_frequency_khz':[100]*12,'depth_um':np.arange(12)*2})
