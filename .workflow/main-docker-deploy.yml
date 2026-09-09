@@ -92,6 +92,7 @@ stages:
             fi
 
             cd "${DEPLOY_DIR}"
+            PREVIOUS_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
 
             # Runtime data must not live in the Git worktree: the deployment
             # deliberately resets that worktree to origin/main on every run.
@@ -142,6 +143,16 @@ stages:
             $COMPOSE -f docker-compose.prod.yml config
 
             echo "==> pull images"
+            API_IMAGE="${REGISTRY}/jacobshi/ultrafast_laser_process_decision_agent-api"
+            WEB_IMAGE="${REGISTRY}/jacobshi/ultrafast_laser_process_decision_agent-web"
+            for IMAGE in "${API_IMAGE}" "${WEB_IMAGE}"; do
+              if docker image inspect "${IMAGE}:latest" >/dev/null 2>&1; then
+                docker tag "${IMAGE}:latest" "${IMAGE}:rollback"
+                if [ -n "${PREVIOUS_COMMIT}" ]; then
+                  docker tag "${IMAGE}:latest" "${IMAGE}:rollback-${PREVIOUS_COMMIT:0:12}"
+                fi
+              fi
+            done
             $COMPOSE -f docker-compose.prod.yml pull
 
             echo "==> recreate services"
@@ -152,5 +163,7 @@ stages:
 
             echo "==> deployment status"
             $COMPOSE -f docker-compose.prod.yml ps
+            git rev-parse HEAD > "${STATE_DIR}/deployed-commit"
+            echo "rollback images preserve the deployment before $(cat "${STATE_DIR}/deployed-commit")"
             BASH
         strategy: {}
