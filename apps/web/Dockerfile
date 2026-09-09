@@ -5,6 +5,7 @@ WORKDIR /app
 
 COPY apps/web/package*.json ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+RUN npm audit --audit-level=high
 
 COPY apps/web ./
 ARG API_INTERNAL_URL=http://api:8000

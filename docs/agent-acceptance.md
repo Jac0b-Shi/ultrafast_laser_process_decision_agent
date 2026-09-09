@@ -27,3 +27,5 @@ Docker 产品后端测试覆盖以上权限、迁移、计费及并发边界。�
 流式事件、模型版本和论文实验指标的详细清单见 [streaming-analysis-experiment.md](streaming-analysis-experiment.md)。生产构建需同时包含 `api`、`web` 和 `worker`，反向代理必须保留 `text/event-stream` 并接受 `X-Accel-Buffering: no`。
 
 部署脚本在拉取新镜像前，将当前 API 与 Web 镜像保留为 `rollback` 和带上一提交号的本地标签，并把已部署提交写入持久状态目录；镜像清理不得删除这些标签。
+
+Web 镜像构建会执行 `npm audit --audit-level=high`。高危或严重依赖告警会阻止镜像发布；升级依赖后仍需确认干净锁文件、类型检查、生产构建和浏览器回归全部通过。
