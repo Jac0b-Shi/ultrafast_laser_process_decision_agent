@@ -11,6 +11,18 @@ from app.services.data_loader import load_dataset, PARAMETER_COLUMNS, QUALITY_CO
 from app.services.recommender import _add_intermediate_columns
 
 
+POLICY_VERSION = "history-first-target-gated-v2"
+SUPPORT_LIMIT = 1.0
+
+
+def candidate_loss(quality, targets, distance):
+    """Distance bounds applicability; admissible settings rank by target loss."""
+    loss, fits = quality_loss(quality, targets)
+    if not fits or not np.isfinite(distance) or distance < 0 or distance > SUPPORT_LIMIT:
+        return None
+    return loss
+
+
 def dataset(owner):
     public = load_dataset()
     private = []
@@ -154,11 +166,10 @@ def decide(owner, task, proposed=None, history_only=False):
         ranked = []
         for offset, (_, point) in enumerate(generated.iterrows()):
             q = {c: float(v[offset]) for c, v in predictions.items()}
-            loss, fits = quality_loss(q, task["targets"])
-            if not fits or distances[offset] > 1:
+            loss = candidate_loss(q, task["targets"], distances[offset])
+            if loss is None:
                 continue
-            risk = np.mean([uncertainty[c]/max(task["targets"][c]["tolerance"], abs(task["targets"][c]["value"])*.01, .001) for c in q])
-            ranked.append((loss+.2*risk+.2*distances[offset], loss, offset, q))
+            ranked.append((loss, loss, offset, q))
         if not ranked:
             raise HTTPException(422, "验证模型未找到满足全部目标的受支持参数，请调整目标或补充测量")
         _, loss, offset, quality = min(ranked, key=lambda x: x[0])
@@ -181,4 +192,4 @@ def decide(owner, task, proposed=None, history_only=False):
     formula_snapshot = approved()
     formula_version = hashlib.sha256(json.dumps(formula_snapshot, sort_keys=True).encode()).hexdigest()[:12]
     signature = hashlib.sha256(pd.util.hash_pandas_object(full.astype(str), index=False).values.tobytes()).hexdigest()[:16]
-    return {"source": source, "parameters": parameters, "quality": quality, "match_score": 1/(1+loss), "confidence": confidence, "similar_cases": references, "intermediate_metrics": intermediate, "intermediate_by_target": by_target, "formula_snapshot": formula_snapshot, "model_audit": audit, "model_versions": model_versions, "data_version": signature+":"+store.version(owner), "model_version": "mechanism-grouped-v1:"+formula_version, "task": task}
+    return {"source": source, "parameters": parameters, "quality": quality, "match_score": 1/(1+loss), "confidence": confidence, "similar_cases": references, "intermediate_metrics": intermediate, "intermediate_by_target": by_target, "formula_snapshot": formula_snapshot, "model_audit": audit, "model_versions": model_versions, "data_version": signature+":"+store.version(owner), "model_version": "mechanism-grouped-v1:"+formula_version, "policy_version": POLICY_VERSION, "task": task}
