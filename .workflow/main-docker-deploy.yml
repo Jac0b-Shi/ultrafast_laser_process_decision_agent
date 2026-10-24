@@ -46,7 +46,7 @@ stages:
         certificate: 497be600-2dd4-013f-f852-16e62a0a3a44
         tag: ${WEB_IMAGE_REPO}:${WEB_IMAGE_TAG}
         dockerfile: ./apps/web/Dockerfile
-        isCache: true
+        isCache: false
         processorType:
           - amd64
         parameter:
@@ -155,8 +155,14 @@ stages:
             done
             $COMPOSE -f docker-compose.prod.yml pull
 
+            echo "==> verify pulled Web runtime before replacing services"
+            $COMPOSE -f docker-compose.prod.yml run --rm --no-deps --entrypoint node web scripts/check-runtime.cjs
+
             echo "==> recreate services"
             $COMPOSE -f docker-compose.prod.yml up -d --force-recreate --remove-orphans
+
+            echo "==> verify running Web runtime"
+            $COMPOSE -f docker-compose.prod.yml exec -T web node scripts/check-runtime.cjs
 
             echo "==> cleanup old images"
             docker image prune -f
