@@ -35,7 +35,7 @@ export function TopBar({ summary, modelInfo, onRefresh, currentPage, onPageChang
               onClick={() => onPageChange("workbench")}
               className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
                 currentPage === "workbench"
-                  ? "bg-white text-primary font-medium shadow-sm"
+                  ? "bg-white text-primary font-medium shadow-xs"
                   : "text-gray-600 hover:text-gray-900"
               }`}
             >
@@ -45,7 +45,7 @@ export function TopBar({ summary, modelInfo, onRefresh, currentPage, onPageChang
               onClick={() => onPageChange("data-management")}
               className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
                 currentPage === "data-management"
-                  ? "bg-white text-primary font-medium shadow-sm"
+                  ? "bg-white text-primary font-medium shadow-xs"
                   : "text-gray-600 hover:text-gray-900"
               }`}
             >

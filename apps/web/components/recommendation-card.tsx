@@ -1,6 +1,6 @@
 "use client";
 
-import { BlockMath } from "react-katex";
+import { BlockMath } from "@/components/block-math";
 import {
   formatMetricText,
   getMetricDisplay,
@@ -128,7 +128,7 @@ export function RecommendationCard({ recommendation: rec, isSelected, onSelect }
   return (
     <article
       className={`bg-white rounded-xl border-2 transition-colors overflow-hidden ${
-        isSelected ? "border-primary shadow-md ring-1 ring-primary/20" : "border-gray-200 shadow-sm"
+        isSelected ? "border-primary shadow-md ring-1 ring-primary/20" : "border-gray-200 shadow-xs"
       }`}
     >
       {/* header */}
@@ -148,7 +148,7 @@ export function RecommendationCard({ recommendation: rec, isSelected, onSelect }
               <span className="text-xs text-gray-400">{rec.model_name}</span>
             )}
             {isDiagnosticOnly && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
                 实验性分析候选
               </span>
             )}
@@ -164,7 +164,7 @@ export function RecommendationCard({ recommendation: rec, isSelected, onSelect }
             isDiagnosticOnly
               ? "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed"
               : isSelected
-              ? "bg-primary text-white shadow-sm"
+              ? "bg-primary text-white shadow-xs"
               : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
           }`}
         >

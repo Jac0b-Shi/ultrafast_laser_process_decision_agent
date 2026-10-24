@@ -43,7 +43,7 @@ function methodLabel(method: string | null): string {
 function QuerySummaryBadge({ label, value }: { label: string; value: string }) {
   if (!value) return null;
   return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[11px]">
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-gray-100 text-gray-600 text-[11px]">
       <span className="text-gray-400">{label}</span>
       {value}
     </span>
@@ -103,7 +103,7 @@ export function QueryHistoryPanel({ history, onRestore, onRemove, onClear }: Pro
 
               {/* material + query params */}
               <div className="flex flex-wrap gap-1 mb-2">
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-primary-50 text-primary text-[11px] font-medium border border-primary-100">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm bg-primary-50 text-primary text-[11px] font-medium border border-primary-100">
                   {entry.query.material || "未指定材料"}
                 </span>
                 <QuerySummaryBadge label="深度 " value={entry.query.targetDepth ? `${entry.query.targetDepth}μm` : ""} />
@@ -122,14 +122,14 @@ export function QueryHistoryPanel({ history, onRestore, onRemove, onClear }: Pro
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     onClick={() => onRemove(entry.id)}
-                    className="p-1 rounded text-gray-300 hover:text-red-400 transition-colors"
+                    className="p-1 rounded-sm text-gray-300 hover:text-red-400 transition-colors"
                     aria-label="删除此记录"
                   >
                     <Trash2 size={11} aria-hidden="true" />
                   </button>
                   <button
                     onClick={() => onRestore(entry)}
-                    className="flex items-center gap-0.5 px-2 py-1 rounded bg-primary text-white text-[11px] font-medium hover:bg-primary-800 transition-colors"
+                    className="flex items-center gap-0.5 px-2 py-1 rounded-sm bg-primary text-white text-[11px] font-medium hover:bg-primary-800 transition-colors"
                     aria-label="恢复此查询"
                   >
                     <RotateCcw size={10} aria-hidden="true" />

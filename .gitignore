@@ -19,6 +19,7 @@ pnpm-debug.log*
 *.tsbuildinfo
 
 # Environment and secrets
+.private-ops/
 .env
 .env.*
 !.env.example

@@ -250,7 +250,7 @@ export function DataManagement() {
       <div className="max-w-[1440px] mx-auto px-5 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,320px)_1fr] gap-6">
           {/* left column - materials */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100">
               <h2 className="text-base font-semibold text-gray-900">材料列表</h2>
               <p className="text-xs text-gray-500 mt-0.5">选择材料查看或管理实验数据</p>
@@ -264,7 +264,7 @@ export function DataManagement() {
                   placeholder="新材料名称"
                   value={newMaterialName}
                   onChange={(e) => setNewMaterialName(e.target.value)}
-                  className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   onKeyPress={(e) => e.key === "Enter" && createMaterial()}
                 />
                 <button
@@ -341,7 +341,7 @@ export function DataManagement() {
 
             {/* create/edit form */}
             {showCreateForm && currentMaterial && (
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
                 <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
                   <h3 className="text-base font-semibold text-gray-900">
                     {editRecord ? "编辑数据" : "新增实验数据"}
@@ -376,7 +376,7 @@ export function DataManagement() {
                               handleInputChange(field.key as keyof typeof form, e.target.value)
                             }
                             placeholder="-"
-                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary"
                           />
                         </div>
                       ))}
@@ -400,7 +400,7 @@ export function DataManagement() {
                               handleInputChange(field.key as keyof typeof form, e.target.value)
                             }
                             placeholder="-"
-                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary"
                           />
                         </div>
                       ))}
@@ -416,7 +416,7 @@ export function DataManagement() {
                           type="checkbox"
                           checked={form.is_active}
                           onChange={(e) => handleInputChange("is_active", e.target.checked)}
-                          className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20"
+                          className="w-4 h-4 rounded-sm border-gray-300 text-primary focus:ring-primary/20"
                         />
                         <span className="text-sm text-gray-700">{form.is_active ? "是" : "否"}</span>
                       </label>
@@ -426,7 +426,7 @@ export function DataManagement() {
                       <select
                         value={form.data_source}
                         onChange={(e) => handleInputChange("data_source", e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary"
                       >
                         <option value="user">用户新增</option>
                         <option value="system">系统预置</option>
@@ -443,7 +443,7 @@ export function DataManagement() {
                       onChange={(e) => handleInputChange("note", e.target.value)}
                       placeholder="输入备注信息..."
                       rows={2}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
                     />
                   </div>
 
@@ -460,7 +460,7 @@ export function DataManagement() {
 
             {/* data table */}
             {currentMaterial && (
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
@@ -544,7 +544,7 @@ export function DataManagement() {
                                 {record.data_source !== "system" && (
                                   <button
                                     onClick={() => handleEdit(record)}
-                                    className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-primary transition-colors"
+                                    className="p-1.5 rounded-sm hover:bg-gray-100 text-gray-500 hover:text-primary transition-colors"
                                     title="编辑"
                                   >
                                     <Edit2 size={14} />
@@ -553,7 +553,7 @@ export function DataManagement() {
                                 {record.data_source !== "system" && (
                                   <button
                                     onClick={() => record.case_id && handleDelete(record.case_id)}
-                                    className="p-1.5 rounded hover:bg-red-50 text-gray-500 hover:text-red-500 transition-colors"
+                                    className="p-1.5 rounded-sm hover:bg-red-50 text-gray-500 hover:text-red-500 transition-colors"
                                     title="删除"
                                   >
                                     <Trash2 size={14} />

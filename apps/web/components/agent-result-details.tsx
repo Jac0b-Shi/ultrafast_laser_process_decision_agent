@@ -1,4 +1,4 @@
-import { BlockMath } from "react-katex";
+import { BlockMath } from "@/components/block-math";
 import { getMetricDisplay, metricLabel } from "@/lib/metric-display";
 
 type Candidate = { algorithm:string; status:string; rmse?:number; mae?:number; r2?:number; reason?:string };
