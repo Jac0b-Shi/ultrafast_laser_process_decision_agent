@@ -31,7 +31,7 @@ stages:
         certificate: 497be600-2dd4-013f-f852-16e62a0a3a44
         tag: ${API_IMAGE_REPO}:${API_IMAGE_TAG}
         dockerfile: ./apps/api/Dockerfile
-        isCache: true
+        isCache: false
         processorType:
           - amd64
         parameter:

@@ -37,7 +37,7 @@ export function InfoPanels({
   onClearHistory,
 }: Props) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
       {/* tabs */}
       <div className="flex border-b border-gray-100 overflow-x-auto">
         {TABS.map((tab) => (

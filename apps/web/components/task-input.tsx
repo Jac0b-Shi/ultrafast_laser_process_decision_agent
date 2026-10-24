@@ -44,7 +44,7 @@ export function TaskInput({
   onAlgorithmChange,
 }: Props) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
       {/* header */}
       <div className="px-5 py-4 border-b border-gray-100">
         <h2 className="text-base font-semibold text-gray-900">任务输入</h2>
@@ -59,7 +59,7 @@ export function TaskInput({
           <select
             value={form.material}
             onChange={(e) => onChangeMaterial(e.target.value)}
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
           >
             {materials.map((m) => (
               <option key={m.material} value={m.material}>
@@ -80,7 +80,7 @@ export function TaskInput({
             value={form.targetDepth}
             onChange={(e) => onChangeField("targetDepth", e.target.value)}
             placeholder="例如 40"
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
           />
         </div>
 
@@ -96,7 +96,7 @@ export function TaskInput({
             disabled={!diameterAvailable}
             placeholder={diameterAvailable ? "例如 100" : "当前材料暂无直径指标"}
             onChange={(e) => onChangeField("targetDiameter", e.target.value)}
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
           />
         </div>
 
@@ -111,7 +111,7 @@ export function TaskInput({
             value={form.maxRoughness}
             onChange={(e) => onChangeField("maxRoughness", e.target.value)}
             placeholder="留空则不限制"
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
           />
         </div>
 
@@ -134,7 +134,7 @@ export function TaskInput({
                 disabled={!available}
                 placeholder={available ? field.placeholder : "当前材料暂无该指标"}
                 onChange={(e) => onChangeField(field.key, e.target.value)}
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-300 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
               />
             </div>
           );
@@ -195,7 +195,7 @@ export function TaskInput({
         <button
           onClick={() => onSubmit()}
           disabled={loading || !form.material}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
         >
           <Send size={14} />
           {loading ? "计算中..." : "生成推荐"}

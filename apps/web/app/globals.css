@@ -1,39 +1,84 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
+@theme {
+  --color-primary-50: #f0fdfa;
+  --color-primary-100: #ccfbf1;
+  --color-primary-200: #99f6e4;
+  --color-primary-400: #2dd4bf;
+  --color-primary-500: #14b8a6;
+  --color-primary-600: #0d9488;
+  --color-primary-700: #0f766e;
+  --color-primary-800: #115e59;
+  --color-primary-900: #134e4a;
+  --color-primary: #0f766e;
+
+  --color-accent: #b7791f;
+  --color-accent-light: #f59e0b;
+
+  --color-danger: #b91c1c;
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
 @layer base {
-  body {
-    @apply bg-[#f7f8f5] text-[#17201b] antialiased;
-    font-family: "Inter", "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
   }
 }
 
-@layer components {
-  .kv-cell {
-    @apply rounded-lg border border-gray-200 bg-white p-3;
-  }
-  .kv-cell-label {
-    @apply block text-xs text-gray-500 truncate;
-  }
-  .kv-cell-value {
-    @apply block mt-1 text-sm font-semibold text-gray-900 truncate;
+@utility kv-cell {
+  @apply rounded-lg border border-gray-200 bg-white p-3;
+}
+
+@utility kv-cell-label {
+  @apply block text-xs text-gray-500 truncate;
+}
+
+@utility kv-cell-value {
+  @apply block mt-1 text-sm font-semibold text-gray-900 truncate;
+}
+
+@utility formula-card {
+  @apply rounded-lg border border-gray-200 bg-white p-3 overflow-hidden;
+}
+
+/* KaTeX ships unlayered CSS; keep these overrides unlayered as well. */
+.formula-card .katex-display {
+  margin: 0;
+  text-align: left;
+}
+
+.formula-card .katex {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+@utility score-bar-bg {
+  @apply h-2 rounded-full bg-gray-100 overflow-hidden;
+}
+
+@utility score-bar-fill {
+  @apply h-full rounded-full transition-all duration-500;
+}
+
+@layer base {
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
   }
 
-  .formula-card {
-    @apply rounded-lg border border-gray-200 bg-white p-3 overflow-hidden;
-  }
-  .formula-card .katex-display {
-    @apply m-0 text-left;
-  }
-  .formula-card .katex {
-    @apply text-sm;
-  }
-
-  .score-bar-bg {
-    @apply h-2 rounded-full bg-gray-100 overflow-hidden;
-  }
-  .score-bar-fill {
-    @apply h-full rounded-full transition-all duration-500;
+  body {
+    @apply bg-[#f7f8f5] text-[#17201b] antialiased;
+    font-family: "Inter", "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
   }
 }
