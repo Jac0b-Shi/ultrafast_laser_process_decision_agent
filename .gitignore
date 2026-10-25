@@ -85,3 +85,4 @@ playwright-report/
 
 # Local policy verification output
 .policy-verification/
+.deployment-verification/

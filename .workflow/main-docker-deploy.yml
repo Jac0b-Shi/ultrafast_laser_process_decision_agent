@@ -124,7 +124,7 @@ stages:
             echo "==> docker compose version"
             if docker compose version >/dev/null 2>&1; then
               COMPOSE="docker compose"
-            elif command -v docker-compose >/dev/null 2>&1; then
+            elif docker-compose version >/dev/null 2>&1; then
               COMPOSE="docker-compose"
             else
               echo "ERROR: neither docker compose nor docker-compose is available"
@@ -156,13 +156,13 @@ stages:
             $COMPOSE -f docker-compose.prod.yml pull
 
             echo "==> verify pulled Web runtime before replacing services"
-            $COMPOSE -f docker-compose.prod.yml run --rm --no-deps --entrypoint node web scripts/check-runtime.cjs
+            $COMPOSE -f docker-compose.prod.yml run --rm -T --no-deps --entrypoint node web scripts/check-runtime.cjs </dev/null
 
             echo "==> recreate services"
             $COMPOSE -f docker-compose.prod.yml up -d --force-recreate --remove-orphans
 
             echo "==> verify running Web runtime"
-            $COMPOSE -f docker-compose.prod.yml exec -T web node scripts/check-runtime.cjs
+            $COMPOSE -f docker-compose.prod.yml exec -T web node scripts/check-runtime.cjs </dev/null
 
             echo "==> cleanup old images"
             docker image prune -f
